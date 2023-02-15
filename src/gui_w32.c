@@ -203,6 +203,12 @@ gui_mch_set_rendering_options(char_u *s)
 
 #endif // PROTO
 
+#include <dwmapi.h>
+// #include <Uxtheme.h>//////////////////////////
+#ifndef DWMWA_USE_IMMERSIVE_DARK_MODE
+# define DWMWA_USE_IMMERSIVE_DARK_MODE 20
+#endif
+
 #ifdef FEAT_MENU
 # define MENUHINTS		// show menu hints in command line
 #endif
@@ -330,6 +336,8 @@ static int		s_findrep_is_find;	// TRUE for find dialog, FALSE
 HWND			s_hwnd = NULL;
 static HDC		s_hdc = NULL;
 static HBRUSH		s_brush = NULL;
+
+static int		s_using_dark_theme = FALSE;
 
 #ifdef FEAT_TOOLBAR
 static HWND		s_toolbarhwnd = NULL;
@@ -1356,6 +1364,39 @@ _TextAreaWndProc(
 	    return DefWindowProcW(hwnd, uMsg, wParam, lParam);
     }
 }
+    int
+is_desktop_dark_theme_active()
+{
+    static BOOL sbDidGetRegValue = FALSE;
+    static BOOL sbDesktopDarkThemActive = FALSE;
+
+    if (sbDidGetRegValue)
+	return sbDesktopDarkThemActive;
+
+    DWORD   keyType;
+    DWORD   keyValue;
+    DWORD   keynBytes = 4;
+    LSTATUS st = RegGetValue(
+	HKEY_CURRENT_USER,
+	TEXT("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize"),
+	TEXT("AppsUseLightTheme"),
+	RRF_RT_REG_DWORD,
+	&keyType,
+	&keyValue,
+	&keynBytes);
+    sbDidGetRegValue = TRUE;
+    if (st == ERROR_SUCCESS && keyType == REG_DWORD)
+	sbDesktopDarkThemActive = !keyValue;
+    return sbDesktopDarkThemActive;
+}
+
+#if defined(FEAT_GUI_DARKTHEME) || defined(PROTO)
+    void
+gui_mch_set_dark_theme(int dark)
+{
+    s_using_dark_theme = dark || is_desktop_dark_theme_active();
+}
+#endif // FEAT_GUI_DARKTHEME
 
 /*
  * Called when the foreground or background color has been changed.
@@ -1378,8 +1419,18 @@ gui_mch_new_colors(void)
     void
 gui_mch_def_colors(void)
 {
-    gui.norm_pixel = GetSysColor(COLOR_WINDOWTEXT);
-    gui.back_pixel = GetSysColor(COLOR_WINDOW);
+    gui_mch_set_dark_theme(s_using_dark_theme);
+    if (s_using_dark_theme)
+    {
+	// gui.back_pixel = GetSysColor(COLOR_WINDOWTEXT);
+	gui.back_pixel = GetSysColor(COLOR_WINDOWTEXT);
+	gui.norm_pixel = GetSysColor(COLOR_WINDOW);
+    }
+    else
+    {
+	gui.norm_pixel = GetSysColor(COLOR_WINDOWTEXT);
+	gui.back_pixel = GetSysColor(COLOR_WINDOW);
+    }
     gui.def_norm_pixel = gui.norm_pixel;
     gui.def_back_pixel = gui.back_pixel;
 }
@@ -4582,7 +4633,7 @@ _OnNotify(HWND hwnd, UINT id, NMHDR *hdr)
 {
     switch (hdr->code)
     {
-	case TTN_GETDISPINFOW:
+	case TTN_GETDISPINFOW: //alias for next case.
 	case TTN_GETDISPINFO:
 	    {
 		char_u		*str = NULL;
@@ -4757,6 +4808,7 @@ _OnDpiChanged(HWND hwnd, UINT xdpi UNUSED, UINT ydpi, RECT *rc UNUSED)
     return 0L;
 }
 
+// HBRUSH hbrWhite, hbrBlack, hbrGray;
 
     static LRESULT CALLBACK
 _WndProc(
@@ -4896,7 +4948,211 @@ _WndProc(
     case WM_DPICHANGED:
 	return _OnDpiChanged(hwnd, (UINT)LOWORD(wParam), (UINT)HIWORD(wParam),
 		(RECT*)lParam);
+    case WM_MEASUREITEM:
+    {
+	LPMEASUREITEMSTRUCT lpMeasureItemStruct=(LPMEASUREITEMSTRUCT)lParam;
+	if(lpMeasureItemStruct->CtlType==ODT_MENU)
+	{
+	//     Menu *mMenu=(Menu *)lpMeasureItemStruct->itemData;
+	//     //DebugText(to_string(MenuItemSize.cx) + "\t" + to_string(MenuItemSize.cy));
+	//     if(MenuItemSize.cx>0 && MenuItemSize.cy>0)
+	//     {
+	// 	lpMeasureItemStruct->itemWidth=MenuItemSize.cx;
+	// 	lpMeasureItemStruct->itemHeight=MenuItemSize.cy;
+	//     }
+	//     else
+	//     {
+	    vimmenu_T *menu;
+	    int nMenuItemId = lpMeasureItemStruct->itemID;
+	    FOR_ALL_MENUS(menu)
+		if (menu->id == nMenuItemId && menu->name)
+		    break;
+	
+	    if (menu == NULL || menu->name == NULL || strlen(menu->name) < 1)
+		lpMeasureItemStruct->itemWidth = 100;
+	    else
+	    {
+		//HDC temp_hDC = GetDC(NULL);
+		// LPSIZE psizl = 0;
+		// RECT rect = { 0, 0, 0, 0 };
+		//DrawText(temp_hDC, menu->name, strlen(menu->name), &rect, DT_CALCRECT);
+		////GetTextExtentPoint32(temp_hDC, menu->name, (int)strlen(menu->name), psizl);
+		
+		//textWidth = GetTextWidthEnc(GetDC(NULL), menu->name, (int)STRLEN(menu->name));
 
+//   [in]  HDC    hdc,
+//   [in]  LPCSTR lpString,
+//   [in]  int    c,
+//   [out] LPSIZE psizl
+		lpMeasureItemStruct->itemWidth = GetTextWidthEnc(
+			      GetDC(NULL), menu->name,(int)STRLEN(menu->name));
+	    }
+
+
+		////  lpMeasureItemStruct->itemHeight=20;
+	//     }
+	    return TRUE;
+        }
+    }
+    case WM_DRAWITEM:
+    {
+	LPDRAWITEMSTRUCT lpDrawItemStruct = (LPDRAWITEMSTRUCT)lParam;
+
+	COLORREF cr_active_ctl_bg;
+	COLORREF cr_active_ctl_fg;
+	COLORREF cr_inactive_ctl_bg;
+	COLORREF cr_inactive_ctl_fg;
+
+	if (s_using_dark_theme)
+	{
+	    cr_active_ctl_bg = RGB(35, 39, 46);
+	    cr_active_ctl_fg = RGB(255, 255, 255);
+	    cr_inactive_ctl_bg = RGB(88, 88, 88);
+	    cr_inactive_ctl_fg = RGB(160, 160, 160);
+	}
+	else
+	{
+	    cr_active_ctl_bg = GetSysColor(COLOR_BTNHIGHLIGHT);
+	    cr_active_ctl_fg = GetSysColor(COLOR_BTNTEXT);
+	    cr_inactive_ctl_bg = GetSysColor(COLOR_INACTIVECAPTION);
+	    cr_inactive_ctl_fg = GetSysColor(COLOR_BTNSHADOW);
+	}
+
+	RECT rect = lpDrawItemStruct->rcItem;
+	switch (lpDrawItemStruct->CtlType)
+	{
+	case ODT_TAB:
+	{
+	    rect.top += GetSystemMetrics(SM_CYEDGE);
+	    rect.left += GetSystemMetrics(SM_CYEDGE);
+	    rect.right -= GetSystemMetrics(SM_CYEDGE);
+	    rect.bottom -= GetSystemMetrics(SM_CYEDGE);
+
+	    int nTabIndex = lpDrawItemStruct->itemID;
+	    if (nTabIndex < 0)
+		break;
+
+	    BOOL bSelected = (nTabIndex == TabCtrl_GetCurSel(s_tabhwnd));
+
+	    WCHAR label[64];
+	    TCITEMW tci;
+	    tci.mask = TCIF_TEXT/*|TCIF_IMAGE*/;
+	    tci.pszText = label;
+	    tci.cchTextMax = 63;
+	    SendMessage(s_tabhwnd, TCM_GETITEMW, (WPARAM)nTabIndex, (LPARAM)&tci);
+
+	    SetBkMode(lpDrawItemStruct->hDC, TRANSPARENT);
+	    if (bSelected)
+	    {
+		HBRUSH hbr_active_ctl_bg = CreateSolidBrush(cr_active_ctl_bg);
+		FillRect(lpDrawItemStruct->hDC, &rect, hbr_active_ctl_bg);
+		SetTextColor(lpDrawItemStruct->hDC, cr_active_ctl_fg);
+	    }
+	    else
+	    {
+		HBRUSH hbr_inactive_ctl_bg = CreateSolidBrush(cr_inactive_ctl_bg);
+		FillRect(lpDrawItemStruct->hDC, &rect, hbr_inactive_ctl_bg);
+		SetTextColor(lpDrawItemStruct->hDC, cr_active_ctl_fg);
+	    }
+	
+	    DrawTextW(
+		lpDrawItemStruct->hDC,
+		label,
+		-1,
+		&rect,
+		DT_SINGLELINE|DT_VCENTER|DT_CENTER
+	    );
+	    return TRUE;
+	}
+	case ODT_MENU:
+	{
+	    int nMenuItemId = lpDrawItemStruct->itemID;
+	    if (nMenuItemId < 0)
+		break;
+	    vimmenu_T	*menu;
+	    FOR_ALL_MENUS(menu)
+		if (menu->id == nMenuItemId && menu->name && menu_is_menubar(menu->name))
+		    break;
+	
+	    if (menu == NULL || menu->name == NULL || strlen(menu->name) < 1)
+		break;
+	
+	    LPCWSTR label = enc_to_utf16(menu->name, NULL);
+
+	    //BOOL bSelected = (nTabIndex == TabCtrl_GetCurSel(s_tabhwnd));
+
+	    
+	//     TCITEMW tci;
+	//     tci.mask = TCIF_TEXT/*|TCIF_IMAGE*/;
+	//     tci.pszText = label;
+	//     tci.cchTextMax = 63;
+	//     SendMessage(s_tabhwnd, TCM_GETITEMW, (WPARAM)nTabIndex, (LPARAM)&tci);
+
+	//     MENUITEMINFO menuInfo;
+	//     menuInfo.cbSize = sizeof(MENUITEMINFO);
+	//     menuInfo.fMask=MIIM_DATA;
+	//     GetMenuItemInfoW(s_menuBar, nMenuItemId, FALSE, &menuInfo);
+	//     //WCHAR label[menuInfo.cch];
+	//     LPCWSTR label = menuInfo.dwTypeData;
+	//     infow.cch = (UINT)wcslen(wn);
+
+	    SetBkMode(lpDrawItemStruct->hDC, TRANSPARENT);
+	//     if (bSelected)
+	//     {
+		HBRUSH hbr_active_ctl_bg = CreateSolidBrush(cr_active_ctl_bg);
+		FillRect(lpDrawItemStruct->hDC, &rect, hbr_active_ctl_bg);
+		SetTextColor(lpDrawItemStruct->hDC, cr_active_ctl_fg);
+	//     }
+	//     else
+	//     {
+	// 	HBRUSH hbr_inactive_ctl_bg = CreateSolidBrush(cr_inactive_ctl_bg);
+	// 	FillRect(lpDrawItemStruct->hDC, &rect, hbr_inactive_ctl_bg);
+	// 	SetTextColor(lpDrawItemStruct->hDC, cr_active_ctl_fg);
+	//     }
+	
+	    DrawTextW(
+		lpDrawItemStruct->hDC,
+		label,
+		-1,
+		&rect,
+		DT_SINGLELINE|DT_VCENTER|DT_CENTER
+	    );
+	    return TRUE;
+	}
+	default:
+	{
+	    return TRUE;
+	}
+	}
+
+    }
+//     case WM_CREATE:
+//     {
+// 	hbrWhite = GetStockObject(WHITE_BRUSH);
+// 	hbrBlack = GetStockObject(BLACK_BRUSH);
+// 	hbrGray  = GetStockObject(GRAY_BRUSH);
+// 	return 0L;
+//     }
+//     case WM_ERASEBKGND:
+//     {
+// 	HDC hdc = (HDC)wParam;
+// 	RECT rc;
+// 	SetBkMode(hdc, TRANSPARENT);
+// 	GetClientRect(hwnd, &rc);
+// 	SetMapMode(hdc, MM_ANISOTROPIC);
+// 	SetWindowExtEx(hdc, 50, 50, NULL);
+// 	SetViewportExtEx(hdc, rc.right, rc.bottom, NULL);
+// 	FillRect(hdc, &rc, hbrWhite);
+ 
+// 	for (int i = 0; i < 13; i++)
+// 	{
+// 	    int x = (i * 20) % 50;
+// 	    int y = ((i * 20) / 50) * 10;
+// 	    SetRect(&rc, x, y, x + 10, y + 10);
+// 	    FillRect(hdc, &rc, hbrGray);
+// 	}
+// 	return 1L;
+//     }
     default:
 #ifdef MSWIN_FIND_REPLACE
 	if (uMsg == s_findrep_msg && s_findrep_msg != 0)
@@ -5263,9 +5519,9 @@ gui_mch_init(void)
 #endif
 
     load_dpi_func();
-
     s_dpi = pGetDpiForSystem();
     update_scrollbar_size();
+    gui_mch_set_dark_theme(s_using_dark_theme);
 
 #ifdef FEAT_MENU
     gui.menu_height = 0;	// Windows takes care of this
@@ -5275,7 +5531,13 @@ gui_mch_init(void)
     gui.toolbar_height = TOOLBAR_BUTTON_HEIGHT + TOOLBAR_BORDER_HEIGHT;
 #endif
 
-    s_brush = CreateSolidBrush(GetSysColor(COLOR_BTNFACE));
+    //s_brush = CreateSolidBrush(GetSysColor(COLOR_BTNFACE));
+//     guicolor_T alt_color;
+//     if (s_using_dark_theme)
+// 	alt_color = RGB(129, 39, 46);
+//     else
+// 	alt_color = GetSysColor(COLOR_BTNFACE);
+//     s_brush = CreateSolidBrush(alt_color);
 
     // First try using the wide version, so that we can use any title.
     // Otherwise only characters in the active codepage will work.
@@ -5288,7 +5550,7 @@ gui_mch_init(void)
 	wndclassw.hInstance = g_hinst;
 	wndclassw.hIcon = LoadIcon(wndclassw.hInstance, "IDR_VIM");
 	wndclassw.hCursor = LoadCursor(NULL, IDC_ARROW);
-	wndclassw.hbrBackground = s_brush;
+	wndclassw.hbrBackground = NULL; // s_brush;
 	wndclassw.lpszMenuName = NULL;
 	wndclassw.lpszClassName = szVimWndClassW;
 
@@ -5348,6 +5610,21 @@ gui_mch_init(void)
 		100,				// Any value will do
 		NULL, NULL,
 		g_hinst, NULL);
+	if (s_using_dark_theme)
+	{
+	    BOOL b_use_dark = TRUE;
+	    DwmSetWindowAttribute(s_hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, &b_use_dark, sizeof(b_use_dark));
+	    // SetWindowCompositionAttribute
+	    // COLORREF c_text_color = RGB(255, 255, 255);
+	    // DwmSetWindowAttribute(s_hwnd, DWMWA_TEXT_COLOR, &c_text_color, sizeof(c_text_color));
+	//     Dwm
+	    
+	//     SetWindowTheme(s_hwnd, L"DarkMode_Explorer", NULL);
+	    //??? AllowDarkModeForWindow(s_hwnd, TRUE);
+	    // AllowDarkModeForApp
+	    // SendMessageW(s_hwnd, WM_THEMECHANGED, 0, 0);
+	    // SetWindowTheme(s_hwnd, L" ", L" ");
+	}
 	if (s_hwnd != NULL && win_socket_id != 0)
 	{
 	    SetParent(s_hwnd, (HWND)win_socket_id);
@@ -5411,6 +5688,22 @@ gui_mch_init(void)
 
 #ifdef FEAT_MENU
     s_menuBar = CreateMenu();
+/*
+typedef struct tagMENUINFO {
+  DWORD     cbSize;
+  DWORD     fMask;
+  DWORD     dwStyle;
+  UINT      cyMax;
+  HBRUSH    hbrBack;
+  DWORD     dwContextHelpID;
+  ULONG_PTR dwMenuData;
+} MENUINFO, *LPMENUINFO;
+*/
+    MENUINFO mi = { 0 }; 
+    mi.cbSize = sizeof(mi); 
+    mi.fMask = MIM_BACKGROUND|MIM_APPLYTOSUBMENUS; //MFT_OWNERDRAW
+    mi.hbrBack = GetStockObject(BLACK_BRUSH); // hBrush;
+    SetMenuInfo(s_menuBar, &mi);
 #endif
     s_hdc = GetDC(s_textArea);
 
@@ -5430,7 +5723,7 @@ gui_mch_init(void)
      * Check that none of the colors are the same as the background color.
      * Then store the current values as the defaults.
      */
-    gui_check_colors();
+    // gui_check_colors();
     gui.def_norm_pixel = gui.norm_pixel;
     gui.def_back_pixel = gui.back_pixel;
 
@@ -6427,7 +6720,7 @@ gui_mch_add_menu(
 	    | MIIM_SUBMENU;
 	infow.dwItemData = (long_u)menu;
 	infow.wID = menu->id;
-	infow.fType = MFT_STRING;
+	infow.fType = MFT_STRING|MFT_OWNERDRAW;
 	infow.dwTypeData = wn;
 	infow.cch = (UINT)wcslen(wn);
 	infow.hSubMenu = menu->submenu_id;
@@ -6866,6 +7159,7 @@ gui_mch_dialog(
 	load_dpi_func();
 	s_dpi = dpi = pGetDpiForSystem();
 	get_dialog_font_metrics();
+	gui_mch_set_dark_theme(s_using_dark_theme);
     }
     else
 	dpi = pGetDpiForSystem();
@@ -7862,7 +8156,8 @@ gui_mch_tearoff(
     static void
 initialise_toolbar(void)
 {
-    InitCommonControls();
+    // InitCommonControls();
+    // InitCommonControlsEx
     s_toolbarhwnd = CreateToolbarEx(
 		    s_hwnd,
 		    WS_CHILD | TBSTYLE_TOOLTIPS | TBSTYLE_FLAT,
@@ -7881,8 +8176,12 @@ initialise_toolbar(void)
 
     // Remove transparency from the toolbar to prevent the main window
     // background colour showing through
-    SendMessage(s_toolbarhwnd, TB_SETSTYLE, 0,
-	SendMessage(s_toolbarhwnd, TB_GETSTYLE, 0, 0) & ~TBSTYLE_TRANSPARENT);
+    if (!s_using_dark_theme)
+	SendMessage(s_toolbarhwnd, TB_SETSTYLE, 0,
+	    SendMessage(s_toolbarhwnd, TB_GETSTYLE, 0, 0) & ~TBSTYLE_TRANSPARENT);
+
+//     // HBRUSH hbr = (HBRUSH)(DWORD_PTR)GetClassLongPtr(m_hWnd, GCLP_HBRBACKGROUND);
+//     SetClassLongPtr(s_toolbarhwnd, GCLP_HBRBACKGROUND,(LONG_PTR)GetStockObject(BLACK_BRUSH));
 
     s_toolbar_wndproc = SubclassWindow(s_toolbarhwnd, toolbar_wndproc);
 
@@ -7999,9 +8298,10 @@ get_toolbar_bitmap(vimmenu_T *menu)
 initialise_tabline(void)
 {
     InitCommonControls();
+    //InitCommonControlsEx();
 
     s_tabhwnd = CreateWindow(WC_TABCONTROL, "Vim tabline",
-	    WS_CHILD|TCS_FOCUSNEVER|TCS_TOOLTIPS,
+	    WS_CHILD|TCS_FOCUSNEVER|TCS_TOOLTIPS|TCS_OWNERDRAWFIXED,
 	    CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
 	    CW_USEDEFAULT, s_hwnd, NULL, g_hinst, NULL);
     s_tabline_wndproc = SubclassWindow(s_tabhwnd, tabline_wndproc);
@@ -8549,7 +8849,8 @@ gui_mch_create_beval_area(
 	beval->msgCB = mesgCB;
 	beval->clientData = clientData;
 
-	InitCommonControls();
+	// InitCommonControls();
+	// InitCommonControlsEx
 	cur_beval = beval;
 
 	if (p_beval)
@@ -8577,10 +8878,10 @@ Handle_WM_Notify(HWND hwnd UNUSED, LPNMHDR pnmh)
 
 	    cur_beval->showState = ShS_NEUTRAL;
 	    break;
-	case TTN_GETDISPINFO:
+	case TTN_GETDISPINFOA:
 	    {
 		// if you get there then we have new common controls
-		NMTTDISPINFO *info = (NMTTDISPINFO *)pnmh;
+		NMTTDISPINFOA *info = (NMTTDISPINFOA *)pnmh;
 		info->lpszText = (LPSTR)info->lParam;
 		info->uFlags |= TTF_DI_SETITEM;
 	    }
