@@ -4633,7 +4633,7 @@ _OnNotify(HWND hwnd, UINT id, NMHDR *hdr)
 {
     switch (hdr->code)
     {
-	case TTN_GETDISPINFOW: //alias for next case.
+	//case TTN_GETDISPINFOW: //alias for next case.
 	case TTN_GETDISPINFO:
 	    {
 		char_u		*str = NULL;
@@ -4808,7 +4808,52 @@ _OnDpiChanged(HWND hwnd, UINT xdpi UNUSED, UINT ydpi, RECT *rc UNUSED)
     return 0L;
 }
 
-// HBRUSH hbrWhite, hbrBlack, hbrGray;
+//HBRUSH hbrWhite, hbrBlack, hbrGray;
+
+// The get_menu_by_id_helper function is the recursive helper function that
+// searches for a menu with the given ID in a single menu and its descendants. 
+// It takes a vimmenu_T pointer menu and the ID to search for pnMenuItemId, 
+// and returns a pointer to the menu with the given ID if it is found, or NULL
+// otherwise.
+    static vimmenu_T *
+get_menu_by_id_helper(vimmenu_T *menu, int pnMenuItemId)
+{
+    if (menu->id == pnMenuItemId)
+    {
+	return menu;
+    }
+    vimmenu_T *child_menu;
+    FOR_ALL_CHILD_MENUS(menu, child_menu)
+    {
+	vimmenu_T *found_menu
+			     = get_menu_by_id_helper(child_menu, pnMenuItemId);
+	if (found_menu != NULL)
+	{
+	    return found_menu;
+	}
+    }
+    return NULL;
+}
+
+// The get_menu_by_id function is the main recursive function that searches for
+// a menu with the given ID in all menus.  It loops over all top-level menus
+// using the FOR_ALL_MENUS macro, and calls get_menu_by_id_helper on each one 
+// to search for the ID recursively. If a menu with the ID is found, it returns
+// a pointer to it. Otherwise, it returns NULL.
+    static vimmenu_T *
+get_menu_by_id(int pnMenuItemId)
+{
+    vimmenu_T *menu;
+    FOR_ALL_MENUS(menu)
+    {
+        vimmenu_T *found_menu = get_menu_by_id_helper(menu, pnMenuItemId);
+        if (found_menu != NULL)
+	{
+            return found_menu;
+        }
+    }
+    return NULL;
+}
 
     static LRESULT CALLBACK
 _WndProc(
@@ -4950,33 +4995,76 @@ _WndProc(
 		(RECT*)lParam);
     case WM_MEASUREITEM:
     {
-	LPMEASUREITEMSTRUCT lpMeasureItemStruct=(LPMEASUREITEMSTRUCT)lParam;
-	if(lpMeasureItemStruct->CtlType==ODT_MENU)
+	LPMEASUREITEMSTRUCT lpMeasureItem=(LPMEASUREITEMSTRUCT)lParam;
+	switch (lpMeasureItem->CtlType)
 	{
-	//     Menu *mMenu=(Menu *)lpMeasureItemStruct->itemData;
+	    case ODT_MENU:
+	    {
+		int nMenuItemId = lpMeasureItem->itemID;
+	//     Menu *mMenu=(Menu *)lpMeasureItem->itemData;
 	//     //DebugText(to_string(MenuItemSize.cx) + "\t" + to_string(MenuItemSize.cy));
 	//     if(MenuItemSize.cx>0 && MenuItemSize.cy>0)
 	//     {
-	// 	lpMeasureItemStruct->itemWidth=MenuItemSize.cx;
-	// 	lpMeasureItemStruct->itemHeight=MenuItemSize.cy;
+	// 	lpMeasureItem->itemWidth=MenuItemSize.cx;
+	// 	lpMeasureItem->itemHeight=MenuItemSize.cy;
 	//     }
 	//     else
 	//     {
-	    vimmenu_T *menu;
-	    int nMenuItemId = lpMeasureItemStruct->itemID;
-	    FOR_ALL_MENUS(menu)
-		if (menu->id == nMenuItemId && menu->name)
-		    break;
+		vimmenu_T *menu = get_menu_by_id(nMenuItemId);
+		BOOL isMenuBarItem = FALSE;
+		vimmenu_T *menu2;
+		FOR_ALL_MENUS(menu2)
+		{
+		    if (menu2->id == nMenuItemId)
+		    {
+			isMenuBarItem = TRUE;
+			break;
+		    }
+		}
+
+		// int nMenuItemId = ;
+		// FOR_ALL_MENUS(menu)
+		// {
+		//     if (menu->id == nMenuItemId && menu->name)
+		// 	break;
+		// }
 	
-	    if (menu == NULL || menu->name == NULL || strlen(menu->name) < 1)
-		lpMeasureItemStruct->itemWidth = 100;
-	    else
-	    {
-		//HDC temp_hDC = GetDC(NULL);
-		// LPSIZE psizl = 0;
-		// RECT rect = { 0, 0, 0, 0 };
-		//DrawText(temp_hDC, menu->name, strlen(menu->name), &rect, DT_CALCRECT);
-		////GetTextExtentPoint32(temp_hDC, menu->name, (int)strlen(menu->name), psizl);
+		if (menu == NULL || menu->name == NULL || strlen(menu->name) < 1)
+		    lpMeasureItem->itemWidth = 10; //   * s_dpi / DEFAULT_DPI;
+		else
+		{
+		    int acTextLen = 0;
+		    if (menu->actext != NULL && STRLEN(menu->actext) > 0)
+			acTextLen = (int)STRLEN(menu->actext);
+
+		    LPWSTR label = enc_to_utf16(menu->name, NULL);
+		    HDC temp_hDC = GetDC(NULL);
+		    LPSIZE psizl = 0;
+		    RECT rect = { 0, 0, 0, 0 };
+		    //DrawText(temp_hDC, menu->name, strlen(menu->name), &rect, DT_CALCRECT);
+
+		    DRAWTEXTPARAMS stExtFormat;
+		    stExtFormat.cbSize = sizeof(DRAWTEXTPARAMS);
+
+		//     stExtFormat.iLeftMargin = isMenuBarItem ? 10 : 40;
+		//     stExtFormat.iRightMargin = isMenuBarItem ? 10 : 40;
+		//     stExtFormat.iTabLength = 40 - (int)STRLEN(menu->name);
+		    
+		    stExtFormat.iLeftMargin = isMenuBarItem ? 10 : 50;
+		    stExtFormat.iRightMargin = isMenuBarItem ? 10 : 50;
+		    stExtFormat.iTabLength = 28 - acTextLen;
+		    
+		    DrawTextExW(
+			temp_hDC,
+			label,
+			-1,
+			&rect,
+			DT_CALCRECT | DT_SINGLELINE | DT_VCENTER
+			| DT_EXPANDTABS | DT_TABSTOP,
+			&stExtFormat
+		    );
+
+		//GetTextExtentPoint32(temp_hDC, menu->name, (int)strlen(menu->name), psizl);
 		
 		//textWidth = GetTextWidthEnc(GetDC(NULL), menu->name, (int)STRLEN(menu->name));
 
@@ -4984,19 +5072,20 @@ _WndProc(
 //   [in]  LPCSTR lpString,
 //   [in]  int    c,
 //   [out] LPSIZE psizl
-		lpMeasureItemStruct->itemWidth = GetTextWidthEnc(
-			      GetDC(NULL), menu->name,(int)STRLEN(menu->name));
-	    }
+		    lpMeasureItem->itemWidth = rect.right;// - rect.left;// + (isMenuBarItem ? 0 : 200);
+				// + GetTextWidthEnc(GetDC(NULL), menu->name,
+				// 		      (int)STRLEN(menu->name));
+		}
 
-
-		////  lpMeasureItemStruct->itemHeight=20;
+		lpMeasureItem->itemHeight = 42;// * s_dpi / DEFAULT_DPI;
 	//     }
-	    return TRUE;
-        }
+		return TRUE;
+	    }
+	}
     }
     case WM_DRAWITEM:
     {
-	LPDRAWITEMSTRUCT lpDrawItemStruct = (LPDRAWITEMSTRUCT)lParam;
+	LPDRAWITEMSTRUCT lpDrawItem = (LPDRAWITEMSTRUCT)lParam;
 
 	COLORREF cr_active_ctl_bg;
 	COLORREF cr_active_ctl_fg;
@@ -5018,68 +5107,98 @@ _WndProc(
 	    cr_inactive_ctl_fg = GetSysColor(COLOR_BTNSHADOW);
 	}
 
-	RECT rect = lpDrawItemStruct->rcItem;
-	switch (lpDrawItemStruct->CtlType)
+	RECT rect = lpDrawItem->rcItem;
+
+	switch (lpDrawItem->CtlType)
 	{
-	case ODT_TAB:
-	{
-	    rect.top += GetSystemMetrics(SM_CYEDGE);
-	    rect.left += GetSystemMetrics(SM_CYEDGE);
-	    rect.right -= GetSystemMetrics(SM_CYEDGE);
-	    rect.bottom -= GetSystemMetrics(SM_CYEDGE);
-
-	    int nTabIndex = lpDrawItemStruct->itemID;
-	    if (nTabIndex < 0)
-		break;
-
-	    BOOL bSelected = (nTabIndex == TabCtrl_GetCurSel(s_tabhwnd));
-
-	    WCHAR label[64];
-	    TCITEMW tci;
-	    tci.mask = TCIF_TEXT/*|TCIF_IMAGE*/;
-	    tci.pszText = label;
-	    tci.cchTextMax = 63;
-	    SendMessage(s_tabhwnd, TCM_GETITEMW, (WPARAM)nTabIndex, (LPARAM)&tci);
-
-	    SetBkMode(lpDrawItemStruct->hDC, TRANSPARENT);
-	    if (bSelected)
+	    case ODT_TAB:
 	    {
-		HBRUSH hbr_active_ctl_bg = CreateSolidBrush(cr_active_ctl_bg);
-		FillRect(lpDrawItemStruct->hDC, &rect, hbr_active_ctl_bg);
-		SetTextColor(lpDrawItemStruct->hDC, cr_active_ctl_fg);
-	    }
-	    else
-	    {
-		HBRUSH hbr_inactive_ctl_bg = CreateSolidBrush(cr_inactive_ctl_bg);
-		FillRect(lpDrawItemStruct->hDC, &rect, hbr_inactive_ctl_bg);
-		SetTextColor(lpDrawItemStruct->hDC, cr_active_ctl_fg);
-	    }
-	
-	    DrawTextW(
-		lpDrawItemStruct->hDC,
-		label,
-		-1,
-		&rect,
-		DT_SINGLELINE|DT_VCENTER|DT_CENTER
-	    );
-	    return TRUE;
-	}
-	case ODT_MENU:
-	{
-	    int nMenuItemId = lpDrawItemStruct->itemID;
-	    if (nMenuItemId < 0)
-		break;
-	    vimmenu_T	*menu;
-	    FOR_ALL_MENUS(menu)
-		if (menu->id == nMenuItemId && menu->name && menu_is_menubar(menu->name))
+		rect.top += GetSystemMetrics(SM_CYEDGE);
+		rect.left += GetSystemMetrics(SM_CYEDGE);
+		rect.right -= GetSystemMetrics(SM_CYEDGE);
+		rect.bottom -= GetSystemMetrics(SM_CYEDGE);
+
+		int nTabIndex = lpDrawItem->itemID;
+		if (nTabIndex < 0)
 		    break;
-	
-	    if (menu == NULL || menu->name == NULL || strlen(menu->name) < 1)
-		break;
-	
-	    LPCWSTR label = enc_to_utf16(menu->name, NULL);
 
-	    //BOOL bSelected = (nTabIndex == TabCtrl_GetCurSel(s_tabhwnd));
+		BOOL bSelected = (nTabIndex == TabCtrl_GetCurSel(s_tabhwnd));
+
+		WCHAR label[64];
+		TCITEMW tci;
+		tci.mask = TCIF_TEXT/*|TCIF_IMAGE*/;
+		tci.pszText = label;
+		tci.cchTextMax = 63;
+		SendMessage(s_tabhwnd, TCM_GETITEMW, (WPARAM)nTabIndex, (LPARAM)&tci);
+
+		SetBkMode(lpDrawItem->hDC, TRANSPARENT);
+		if (bSelected)
+		{
+		    HBRUSH hbr_active_ctl_bg = CreateSolidBrush(cr_active_ctl_bg);
+		    FillRect(lpDrawItem->hDC, &rect, hbr_active_ctl_bg);
+		    SetTextColor(lpDrawItem->hDC, cr_active_ctl_fg);
+		}
+		else
+		{
+		    HBRUSH hbr_inactive_ctl_bg = CreateSolidBrush(cr_inactive_ctl_bg);
+		    FillRect(lpDrawItem->hDC, &rect, hbr_inactive_ctl_bg);
+		    SetTextColor(lpDrawItem->hDC, cr_active_ctl_fg);
+		}
+	
+		DrawTextW(
+		    lpDrawItem->hDC,
+		    label,
+		    -1,
+		    &rect,
+		    DT_SINGLELINE | DT_VCENTER | DT_CENTER
+		);
+		return TRUE;
+	    } // end case ODT_TAB
+	    case ODT_MENU:
+	    {
+		int nMenuItemId = lpDrawItem->itemID;
+		if (nMenuItemId < 0)
+		    break;
+		vimmenu_T *menu = get_menu_by_id(nMenuItemId);
+
+		BOOL isMenuBarItem = FALSE;
+		vimmenu_T *menu2;
+		FOR_ALL_MENUS(menu2)
+		{
+		    if (menu2->id == nMenuItemId)
+		    {
+			isMenuBarItem = TRUE;
+			break;
+		    }
+		}
+		
+		// FOR_ALL_MENUS(menu)
+		// {
+		//     if (menu->id == nMenuItemId && menu->name) // && menu_is_menubar(menu->name))
+		// 	break;
+		// //     FOR_ALL_CHILD_MENUS(menu, pmenu)
+		// //     {
+		// //     }
+		// }
+
+		LPWSTR label = L"";
+		if (menu != NULL && menu->name != NULL && strlen(menu->name) > 0)
+		    label = enc_to_utf16(menu->name, NULL);   // wscat(label, 
+		
+		if (menu_is_separator(menu->dname))
+		    label = L"---------------";
+
+		// else
+		// {
+		//     label = L"";
+		// //     MENUITEMINFOW mii;
+		// //     mii.cbSize = sizeof(MENUITEMINFOW);
+		// //     mii.fMask=MIIM_DATA;
+		// //     GetMenuItemInfoW(s_menuBar, nMenuItemId, FALSE, &mii);
+		// //     label = mii.dwTypeData;
+		// }
+
+		//BOOL bSelected = (nTabIndex == TabCtrl_GetCurSel(s_tabhwnd));
 
 	    
 	//     TCITEMW tci;
@@ -5096,36 +5215,60 @@ _WndProc(
 	//     LPCWSTR label = menuInfo.dwTypeData;
 	//     infow.cch = (UINT)wcslen(wn);
 
-	    SetBkMode(lpDrawItemStruct->hDC, TRANSPARENT);
-	//     if (bSelected)
-	//     {
-		HBRUSH hbr_active_ctl_bg = CreateSolidBrush(cr_active_ctl_bg);
-		FillRect(lpDrawItemStruct->hDC, &rect, hbr_active_ctl_bg);
-		SetTextColor(lpDrawItemStruct->hDC, cr_active_ctl_fg);
-	//     }
-	//     else
-	//     {
-	// 	HBRUSH hbr_inactive_ctl_bg = CreateSolidBrush(cr_inactive_ctl_bg);
-	// 	FillRect(lpDrawItemStruct->hDC, &rect, hbr_inactive_ctl_bg);
-	// 	SetTextColor(lpDrawItemStruct->hDC, cr_active_ctl_fg);
-	//     }
-	
-	    DrawTextW(
-		lpDrawItemStruct->hDC,
-		label,
-		-1,
-		&rect,
-		DT_SINGLELINE|DT_VCENTER|DT_CENTER
-	    );
-	    return TRUE;
-	}
-	default:
-	{
-	    return TRUE;
-	}
-	}
+		SetBkMode(lpDrawItem->hDC, TRANSPARENT);
+		if (lpDrawItem->itemState & ODS_SELECTED)
+		{
+		    HBRUSH hbr_inactive_ctl_bg = CreateSolidBrush(cr_inactive_ctl_bg);
+		    FillRect(lpDrawItem->hDC, &rect, hbr_inactive_ctl_bg);
+		    SetTextColor(lpDrawItem->hDC, cr_active_ctl_fg);		    
+		}
+		else
+		{
+		    HBRUSH hbr_active_ctl_bg = CreateSolidBrush(cr_active_ctl_bg);
+		    FillRect(lpDrawItem->hDC, &rect, hbr_active_ctl_bg);
+		    SetTextColor(lpDrawItem->hDC, cr_active_ctl_fg);
+		    //SetTextColor(lpDrawItem->hDC, RGB(108, 108, 108));
+		}
 
-    }
+		int acTextLen = 0;
+		if (menu->actext != NULL && STRLEN(menu->actext) > 0)
+		     acTextLen = (int)STRLEN(menu->actext);
+		
+		BOOL hasAcText = acTextLen > 0;
+		
+		DRAWTEXTPARAMS stExtFormat;
+		stExtFormat.cbSize = sizeof(DRAWTEXTPARAMS);
+		stExtFormat.iLeftMargin  = isMenuBarItem ? 10 : 50;
+		stExtFormat.iRightMargin = 0; // isMenuBarItem ? 10 : 50;
+		stExtFormat.iTabLength = 24 - acTextLen;
+		//   UINT cbSize;
+		//   int  iTabLength;
+		//   int  iLeftMargin;
+		//   int  iRightMargin;
+		//   UINT uiLengthDrawn;
+
+		DrawTextExW(
+		    lpDrawItem->hDC,
+		    label,
+		    -1,
+		    &rect,
+		    DT_SINGLELINE
+		    | DT_VCENTER
+		    | (isMenuBarItem ? DT_CENTER : 0)
+		    | DT_LEFT
+		    //| (hasAcText ? DT_RIGHT : 0)
+		    | DT_EXPANDTABS
+		    | DT_TABSTOP,
+		    &stExtFormat
+		);
+		return TRUE;
+	    } // end case ODT_MENU
+	    default:
+		return TRUE;
+	} // end switch (lpDrawItem->CtlType)
+
+    } // end WM_DRAWITEM
+
 //     case WM_CREATE:
 //     {
 // 	hbrWhite = GetStockObject(WHITE_BRUSH);
@@ -5142,15 +5285,15 @@ _WndProc(
 // 	SetMapMode(hdc, MM_ANISOTROPIC);
 // 	SetWindowExtEx(hdc, 50, 50, NULL);
 // 	SetViewportExtEx(hdc, rc.right, rc.bottom, NULL);
-// 	FillRect(hdc, &rc, hbrWhite);
+// 	FillRect(hdc, &rc, hbrBlack);
  
-// 	for (int i = 0; i < 13; i++)
-// 	{
-// 	    int x = (i * 20) % 50;
-// 	    int y = ((i * 20) / 50) * 10;
-// 	    SetRect(&rc, x, y, x + 10, y + 10);
-// 	    FillRect(hdc, &rc, hbrGray);
-// 	}
+// 	// for (int i = 0; i < 13; i++)
+// 	// {
+// 	//     int x = (i * 20) % 50;
+// 	//     int y = ((i * 20) / 50) * 10;
+// 	//     SetRect(&rc, x, y, x + 10, y + 10);
+// 	//     FillRect(hdc, &rc, hbrGray);
+// 	// }
 // 	return 1L;
 //     }
     default:
@@ -5519,6 +5662,7 @@ gui_mch_init(void)
 #endif
 
     load_dpi_func();
+
     s_dpi = pGetDpiForSystem();
     update_scrollbar_size();
     gui_mch_set_dark_theme(s_using_dark_theme);
@@ -5688,6 +5832,8 @@ gui_mch_init(void)
 
 #ifdef FEAT_MENU
     s_menuBar = CreateMenu();
+    if (s_using_dark_theme)
+    {
 /*
 typedef struct tagMENUINFO {
   DWORD     cbSize;
@@ -5699,11 +5845,12 @@ typedef struct tagMENUINFO {
   ULONG_PTR dwMenuData;
 } MENUINFO, *LPMENUINFO;
 */
-    MENUINFO mi = { 0 }; 
-    mi.cbSize = sizeof(mi); 
-    mi.fMask = MIM_BACKGROUND|MIM_APPLYTOSUBMENUS; //MFT_OWNERDRAW
-    mi.hbrBack = GetStockObject(BLACK_BRUSH); // hBrush;
-    SetMenuInfo(s_menuBar, &mi);
+	MENUINFO mi = { 0 }; 
+	mi.cbSize = sizeof(mi); 
+	mi.fMask = MIM_BACKGROUND|MIM_APPLYTOSUBMENUS; //MFT_OWNERDRAW
+	mi.hbrBack = GetStockObject(BLACK_BRUSH); // hBrush;
+	SetMenuInfo(s_menuBar, &mi);
+    }
 #endif
     s_hdc = GetDC(s_textArea);
 
@@ -5723,7 +5870,7 @@ typedef struct tagMENUINFO {
      * Check that none of the colors are the same as the background color.
      * Then store the current values as the defaults.
      */
-    // gui_check_colors();
+    gui_check_colors();
     gui.def_norm_pixel = gui.norm_pixel;
     gui.def_back_pixel = gui.back_pixel;
 
@@ -6716,11 +6863,10 @@ gui_mch_add_menu(
 	    return;
 
 	infow.cbSize = sizeof(infow);
-	infow.fMask = MIIM_DATA | MIIM_TYPE | MIIM_ID
-	    | MIIM_SUBMENU;
+	infow.fMask = MIIM_DATA | MIIM_TYPE | MIIM_ID | MIIM_SUBMENU;
 	infow.dwItemData = (long_u)menu;
 	infow.wID = menu->id;
-	infow.fType = MFT_STRING|MFT_OWNERDRAW;
+	infow.fType = MFT_STRING | MFT_OWNERDRAW;
 	infow.dwTypeData = wn;
 	infow.cch = (UINT)wcslen(wn);
 	infow.hSubMenu = menu->submenu_id;
@@ -6809,7 +6955,8 @@ gui_mch_add_menu_item(
 # ifdef FEAT_TEAROFF
     if (STRNCMP(menu->name, TEAR_STRING, TEAR_LEN) == 0)
     {
-	InsertMenu(parent->submenu_id, (UINT)idx, MF_BITMAP|MF_BYPOSITION,
+	InsertMenu(parent->submenu_id, (UINT)idx,
+		MF_BITMAP | MF_BYPOSITION | MF_OWNERDRAW,
 		(UINT)menu->id, (LPCTSTR) s_htearbitmap);
     }
     else
@@ -6846,8 +6993,8 @@ gui_mch_add_menu_item(
 	if (wn != NULL)
 	{
 	    InsertMenuW(parent->submenu_id, (UINT)idx,
-		    (menu_is_separator(menu->name)
-		     ? MF_SEPARATOR : MF_STRING) | MF_BYPOSITION,
+		    (menu_is_separator(menu->name) ? MF_SEPARATOR : MF_STRING)
+		    | MF_BYPOSITION | MF_OWNERDRAW,
 		    (UINT)menu->id, wn);
 	    vim_free(wn);
 	}
