@@ -337,7 +337,7 @@ HWND			s_hwnd = NULL;
 static HDC		s_hdc = NULL;
 static HBRUSH		s_brush = NULL;
 
-static int		s_using_dark_theme = FALSE;
+static int		s_using_dark_theme = TRUE;  /// hard coded temporarily; was FALSE;
 
 #ifdef FEAT_TOOLBAR
 static HWND		s_toolbarhwnd = NULL;
@@ -1394,7 +1394,8 @@ is_desktop_dark_theme_active()
     void
 gui_mch_set_dark_theme(int dark)
 {
-    s_using_dark_theme = dark || is_desktop_dark_theme_active();
+    //s_using_dark_theme = dark || is_desktop_dark_theme_active();
+    // TODO..  s_using_dark_theme is hard coded TRUE temporarily...
 }
 #endif // FEAT_GUI_DARKTHEME
 
@@ -5030,7 +5031,7 @@ _WndProc(
 		// }
 	
 		if (menu == NULL || menu->name == NULL || strlen(menu->name) < 1)
-		    lpMeasureItem->itemWidth = 10; //   * s_dpi / DEFAULT_DPI;
+		    lpMeasureItem->itemWidth = adjust_by_system_dpi(10); //   * s_dpi / DEFAULT_DPI;
 		else
 		{
 		    int acTextLen = 0;
@@ -5049,11 +5050,10 @@ _WndProc(
 		//     stExtFormat.iLeftMargin = isMenuBarItem ? 10 : 40;
 		//     stExtFormat.iRightMargin = isMenuBarItem ? 10 : 40;
 		//     stExtFormat.iTabLength = 40 - (int)STRLEN(menu->name);
-		    
-		    stExtFormat.iLeftMargin = isMenuBarItem ? 10 : 50;
-		    stExtFormat.iRightMargin = isMenuBarItem ? 10 : 50;
-		    stExtFormat.iTabLength = 28 - acTextLen;
-		    
+		    stExtFormat.iLeftMargin  = adjust_by_system_dpi(isMenuBarItem ? 0 : 30);
+		    stExtFormat.iRightMargin = stExtFormat.iLeftMargin/2; // adjust_by_system_dpi(isMenuBarItem ? 5 : 25);
+		    stExtFormat.iTabLength = adjust_by_system_dpi(8); //- acTextLen; //adjust_by_system_dpi(12 - acTextLen/2);
+
 		    DrawTextExW(
 			temp_hDC,
 			label,
@@ -5065,19 +5065,22 @@ _WndProc(
 		    );
 
 		//GetTextExtentPoint32(temp_hDC, menu->name, (int)strlen(menu->name), psizl);
-		
-		//textWidth = GetTextWidthEnc(GetDC(NULL), menu->name, (int)STRLEN(menu->name));
+
+		//int textWidth = GetTextWidthEnc(GetDC(NULL), menu->name, (int)STRLEN(menu->name));
 
 //   [in]  HDC    hdc,
 //   [in]  LPCSTR lpString,
 //   [in]  int    c,
 //   [out] LPSIZE psizl
-		    lpMeasureItem->itemWidth = rect.right;// - rect.left;// + (isMenuBarItem ? 0 : 200);
-				// + GetTextWidthEnc(GetDC(NULL), menu->name,
+		    //lpMeasureItem->itemWidth = adjust_by_system_dpi(rect.right - rect.left);// - rect.left;// + (isMenuBarItem ? 0 : 200);
+		    lpMeasureItem->itemWidth = rect.right - rect.left;
+		    		// + GetTextWidthEnc(GetDC(NULL), menu->name,
 				// 		      (int)STRLEN(menu->name));
 		}
-
-		lpMeasureItem->itemHeight = 42;// * s_dpi / DEFAULT_DPI;
+		if(menu_is_separator(menu->dname))
+		    lpMeasureItem->itemHeight = adjust_by_system_dpi(10);// * s_dpi / DEFAULT_DPI;
+		else
+		    lpMeasureItem->itemHeight = adjust_by_system_dpi(20);// * s_dpi / DEFAULT_DPI;
 	//     }
 		return TRUE;
 	    }
@@ -5087,6 +5090,8 @@ _WndProc(
     {
 	LPDRAWITEMSTRUCT lpDrawItem = (LPDRAWITEMSTRUCT)lParam;
 
+	COLORREF cr_highlight_ctl_bg;
+	COLORREF cr_highlight_ctl_fg;
 	COLORREF cr_active_ctl_bg;
 	COLORREF cr_active_ctl_fg;
 	COLORREF cr_inactive_ctl_bg;
@@ -5094,17 +5099,38 @@ _WndProc(
 
 	if (s_using_dark_theme)
 	{
+	    cr_highlight_ctl_bg = RGB(88, 88, 88);
+	    cr_highlight_ctl_fg = RGB(255, 255, 255);
+
 	    cr_active_ctl_bg = RGB(35, 39, 46);
 	    cr_active_ctl_fg = RGB(255, 255, 255);
+
 	    cr_inactive_ctl_bg = RGB(88, 88, 88);
-	    cr_inactive_ctl_fg = RGB(160, 160, 160);
+	    cr_inactive_ctl_fg = RGB(110, 110, 110);
+
 	}
 	else
 	{
-	    cr_active_ctl_bg = GetSysColor(COLOR_BTNHIGHLIGHT);
-	    cr_active_ctl_fg = GetSysColor(COLOR_BTNTEXT);
+	    cr_highlight_ctl_bg = GetSysColor(COLOR_MENU);//COLOR_BTNFACE); //COLOR_BTNHIGHLIGHT
+	    cr_highlight_ctl_fg = GetSysColor(COLOR_MENUTEXT);//COLOR_BTNTEXT);
+
+	    unsigned int r1 = GetRValue(cr_highlight_ctl_bg);
+	    unsigned int g1 = GetGValue(cr_highlight_ctl_bg);
+	    unsigned int b1 = GetBValue(cr_highlight_ctl_bg);
+
+	    unsigned int r2 = GetRValue(GetSysColor(COLOR_WINDOW));
+	    unsigned int g2 = GetGValue(GetSysColor(COLOR_WINDOW));
+	    unsigned int b2 = GetBValue(GetSysColor(COLOR_WINDOW));
+
+	    unsigned int r = (r1 + r2)/2;
+	    unsigned int g = (g1 + g2)/2;
+	    unsigned int b = (b1 + b2)/2;
+
+	    cr_active_ctl_bg = RGB(r, g, b);//COLOR_BTNFACE); //COLOR_BTNHIGHLIGHT
+	    cr_active_ctl_fg = GetSysColor(COLOR_MENUTEXT);//COLOR_BTNTEXT);
+
 	    cr_inactive_ctl_bg = GetSysColor(COLOR_INACTIVECAPTION);
-	    cr_inactive_ctl_fg = GetSysColor(COLOR_BTNSHADOW);
+	    cr_inactive_ctl_fg = GetSysColor(COLOR_GRAYTEXT);
 	}
 
 	RECT rect = lpDrawItem->rcItem;
@@ -5181,12 +5207,21 @@ _WndProc(
 		// //     }
 		// }
 
+		int accTextLen = 0;
+		if (menu->actext != NULL && STRLEN(menu->actext) > 0)
+		     accTextLen = (int)STRLEN(menu->actext);
+		
+		BOOL hasAccText = accTextLen > 0;
 		LPWSTR label = L"";
 		if (menu != NULL && menu->name != NULL && strlen(menu->name) > 0)
-		    label = enc_to_utf16(menu->name, NULL);   // wscat(label, 
+		{
+		    int label_lft_len = (int)STRLEN(menu->name) - accTextLen;
+		    label = enc_to_utf16(menu->name, hasAccText ? &label_lft_len : NULL);   // wscat(label, 
+		}
 		
-		if (menu_is_separator(menu->dname))
-		    label = L"---------------";
+		BOOL isSeparator = menu_is_separator(menu->dname);
+		if (isSeparator)
+		    label = L"────────────────────────────────────────────────────────────────────────────────";
 
 		// else
 		// {
@@ -5216,11 +5251,17 @@ _WndProc(
 	//     infow.cch = (UINT)wcslen(wn);
 
 		SetBkMode(lpDrawItem->hDC, TRANSPARENT);
-		if (lpDrawItem->itemState & ODS_SELECTED)
+		if (lpDrawItem->itemState & ODS_GRAYED)
 		{
-		    HBRUSH hbr_inactive_ctl_bg = CreateSolidBrush(cr_inactive_ctl_bg);
-		    FillRect(lpDrawItem->hDC, &rect, hbr_inactive_ctl_bg);
-		    SetTextColor(lpDrawItem->hDC, cr_active_ctl_fg);		    
+		    HBRUSH hbr_active_ctl_bg = CreateSolidBrush(cr_active_ctl_bg);
+		    FillRect(lpDrawItem->hDC, &rect, hbr_active_ctl_bg);
+		    SetTextColor(lpDrawItem->hDC, cr_inactive_ctl_fg);
+		}
+		else if (lpDrawItem->itemState & ODS_SELECTED)
+		{
+		    HBRUSH hbr_highlight_ctl_bg = CreateSolidBrush(cr_highlight_ctl_bg);
+		    FillRect(lpDrawItem->hDC, &rect, hbr_highlight_ctl_bg);
+		    SetTextColor(lpDrawItem->hDC, cr_highlight_ctl_fg);
 		}
 		else
 		{
@@ -5229,18 +5270,17 @@ _WndProc(
 		    SetTextColor(lpDrawItem->hDC, cr_active_ctl_fg);
 		    //SetTextColor(lpDrawItem->hDC, RGB(108, 108, 108));
 		}
+		if(isSeparator)
+		{
+		    SetTextColor(lpDrawItem->hDC, cr_inactive_ctl_fg);
+		}
 
-		int acTextLen = 0;
-		if (menu->actext != NULL && STRLEN(menu->actext) > 0)
-		     acTextLen = (int)STRLEN(menu->actext);
-		
-		BOOL hasAcText = acTextLen > 0;
 		
 		DRAWTEXTPARAMS stExtFormat;
 		stExtFormat.cbSize = sizeof(DRAWTEXTPARAMS);
-		stExtFormat.iLeftMargin  = isMenuBarItem ? 10 : 50;
-		stExtFormat.iRightMargin = 0; // isMenuBarItem ? 10 : 50;
-		stExtFormat.iTabLength = 24 - acTextLen;
+		stExtFormat.iLeftMargin  = isMenuBarItem | isSeparator ? 0 : 30; //adjust_by_system_dpi(isMenuBarItem | isSeparator ? 0 : 30);
+		stExtFormat.iRightMargin = stExtFormat.iLeftMargin/2; // isMenuBarItem ? 10 : 50;
+		stExtFormat.iTabLength = 0; // adjust_by_system_dpi(8); // 32 - accTextLen; ///adjust_by_system_dpi(24 - acTextLen);
 		//   UINT cbSize;
 		//   int  iTabLength;
 		//   int  iLeftMargin;
@@ -5254,13 +5294,29 @@ _WndProc(
 		    &rect,
 		    DT_SINGLELINE
 		    | DT_VCENTER
-		    | (isMenuBarItem ? DT_CENTER : 0)
-		    | DT_LEFT
+		    | (isMenuBarItem ? DT_CENTER : DT_LEFT)
+		    // | DT_LEFT
 		    //| (hasAcText ? DT_RIGHT : 0)
 		    | DT_EXPANDTABS
 		    | DT_TABSTOP,
 		    &stExtFormat
 		);
+		if (hasAccText)
+		{
+		    LPWSTR acc_label = enc_to_utf16(menu->actext, NULL);
+		    DrawTextExW(
+			lpDrawItem->hDC,
+			acc_label,
+			-1,
+			&rect,
+			DT_SINGLELINE
+			| DT_VCENTER
+			| DT_RIGHT
+			| DT_EXPANDTABS
+			| DT_TABSTOP,
+			&stExtFormat
+		    );
+		}
 		return TRUE;
 	    } // end case ODT_MENU
 	    default:
@@ -5278,6 +5334,8 @@ _WndProc(
 //     }
 //     case WM_ERASEBKGND:
 //     {
+// //	return -1;
+// //    }
 // 	HDC hdc = (HDC)wParam;
 // 	RECT rc;
 // 	SetBkMode(hdc, TRANSPARENT);
@@ -8570,6 +8628,10 @@ tabline_wndproc(
 		    send_tabline_menu_event(idx0, TABLINE_MENU_CLOSE);
 		}
 		break;
+	    }
+	case WM_ERASEBKGND :
+	    {
+		return -1;
 	    }
 	default:
 	    break;
