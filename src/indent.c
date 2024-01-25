@@ -74,8 +74,7 @@ tabstop_set(char_u *var, int **array)
 	if (n <= 0 || n > TABSTOP_MAX)
 	{
 	    semsg(_(e_invalid_argument_str), cp);
-	    vim_free(*array);
-	    *array = NULL;
+	    VIM_CLEAR(*array);
 	    return FAIL;
 	}
 	(*array)[t++] = n;
@@ -872,6 +871,7 @@ briopt_check(win_T *wp)
     p = wp->w_p_briopt;
     while (*p != NUL)
     {
+	// Note: Keep this in sync with p_briopt_values
 	if (STRNCMP(p, "shift:", 6) == 0
 		 && ((p[6] == '-' && VIM_ISDIGIT(p[7])) || VIM_ISDIGIT(p[6])))
 	{

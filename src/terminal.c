@@ -272,6 +272,10 @@ parse_termwinsize(win_T *wp, int *rows, int *cols)
     }
     *rows = atoi((char *)wp->w_p_tws);
     *cols = atoi((char *)p + 1);
+    if (*rows > VTERM_MAX_ROWS)
+	*rows = VTERM_MAX_ROWS;
+    if (*cols > VTERM_MAX_COLS)
+	*cols = VTERM_MAX_COLS;
     return minsize;
 }
 
@@ -814,6 +818,8 @@ ex_terminal(exarg_T *eap)
 		ep = NULL;
 	}
 
+	// Note: Keep this in sync with get_terminalopt_name.
+
 # define OPTARG_HAS(name) ((int)(p - cmd) == sizeof(name) - 1 \
 				 && STRNICMP(cmd, name, sizeof(name) - 1) == 0)
 	if (OPTARG_HAS("close"))
@@ -847,13 +853,13 @@ ex_terminal(exarg_T *eap)
 	    else
 		opt.jo_term_api = NULL;
 	}
-	else if (OPTARG_HAS("rows") && ep != NULL && isdigit(ep[1]))
+	else if (OPTARG_HAS("rows") && ep != NULL && SAFE_isdigit(ep[1]))
 	{
 	    opt.jo_set2 |= JO2_TERM_ROWS;
 	    opt.jo_term_rows = atoi((char *)ep + 1);
 	    p = skiptowhite(cmd);
 	}
-	else if (OPTARG_HAS("cols") && ep != NULL && isdigit(ep[1]))
+	else if (OPTARG_HAS("cols") && ep != NULL && SAFE_isdigit(ep[1]))
 	{
 	    opt.jo_set2 |= JO2_TERM_COLS;
 	    opt.jo_term_cols = atoi((char *)ep + 1);
@@ -867,7 +873,7 @@ ex_terminal(exarg_T *eap)
 	    vim_free(opt.jo_eof_chars);
 	    p = skiptowhite(cmd);
 	    *p = NUL;
-	    keys = replace_termcodes(ep + 1, &buf,
+	    keys = replace_termcodes(ep + 1, &buf, 0,
 		    REPTERM_FROM_PART | REPTERM_DO_LT | REPTERM_SPECIAL, NULL);
 	    opt.jo_set2 |= JO2_EOF_CHARS;
 	    opt.jo_eof_chars = vim_strsave(keys);
@@ -887,7 +893,7 @@ ex_terminal(exarg_T *eap)
 		tty_type = 'c';
 	    else
 	    {
-		semsg(e_invalid_value_for_argument_str, "type");
+		semsg(_(e_invalid_value_for_argument_str), "type");
 		goto theend;
 	    }
 	    opt.jo_set2 |= JO2_TTY_TYPE;
@@ -963,6 +969,96 @@ ex_terminal(exarg_T *eap)
 theend:
     vim_free(tofree);
     vim_free(opt.jo_eof_chars);
+}
+
+    static char_u *
+get_terminalopt_name(expand_T *xp UNUSED, int idx)
+{
+    // Note: Keep this in sync with ex_terminal.
+    static char *(p_termopt_values[]) =
+    {
+	"close",
+	"noclose",
+	"open",
+	"curwin",
+	"hidden",
+	"norestore",
+	"shell",
+	"kill=",
+	"rows=",
+	"cols=",
+	"eof=",
+	"type=",
+	"api=",
+    };
+
+    if (idx < (int)ARRAY_LENGTH(p_termopt_values))
+	return (char_u*)p_termopt_values[idx];
+    return NULL;
+}
+
+    static char_u *
+get_termkill_name(expand_T *xp UNUSED, int idx)
+{
+    // These are platform-specific values used for job_stop(). They are defined
+    // in each platform's mch_signal_job(). Just use a unified auto-complete
+    // list for simplicity.
+    static char *(p_termkill_values[]) =
+    {
+	"term",
+	"hup",
+	"quit",
+	"int",
+	"kill",
+	"winch",
+    };
+
+    if (idx < (int)ARRAY_LENGTH(p_termkill_values))
+	return (char_u*)p_termkill_values[idx];
+    return NULL;
+}
+
+/*
+ * Command-line expansion for :terminal [options]
+ */
+    int
+expand_terminal_opt(
+	char_u	    *pat,
+	expand_T    *xp,
+	regmatch_T  *rmp,
+	char_u	    ***matches,
+	int	    *numMatches)
+{
+    if (xp->xp_pattern > xp->xp_line && *(xp->xp_pattern-1) == '=')
+    {
+	char_u *(*cb)(expand_T *, int) = NULL;
+
+	char_u *name_end = xp->xp_pattern - 1;
+	if (name_end - xp->xp_line >= 4
+		&& STRNCMP(name_end - 4, "kill", 4) == 0)
+	    cb = get_termkill_name;
+
+	if (cb != NULL)
+	{
+	    return ExpandGeneric(
+		    pat,
+		    xp,
+		    rmp,
+		    matches,
+		    numMatches,
+		    cb,
+		    FALSE);
+	}
+	return FAIL;
+    }
+    return ExpandGeneric(
+	    pat,
+	    xp,
+	    rmp,
+	    matches,
+	    numMatches,
+	    get_terminalopt_name,
+	    FALSE);
 }
 
 #if defined(FEAT_SESSION) || defined(PROTO)
@@ -1209,6 +1305,24 @@ term_write_job_output(term_T *term, char_u *msg_arg, size_t len_arg)
 }
 
     static void
+position_cursor(win_T *wp, VTermPos *pos)
+{
+    wp->w_wrow = MIN(pos->row, MAX(0, wp->w_height - 1));
+    wp->w_wcol = MIN(pos->col, MAX(0, wp->w_width - 1));
+#ifdef FEAT_PROP_POPUP
+    if (popup_is_popup(wp))
+    {
+	wp->w_wrow += popup_top_extra(wp);
+	wp->w_wcol += popup_left_extra(wp);
+	wp->w_flags |= WFLAG_WCOL_OFF_ADDED | WFLAG_WROW_OFF_ADDED;
+    }
+    else
+	wp->w_flags &= ~(WFLAG_WCOL_OFF_ADDED | WFLAG_WROW_OFF_ADDED);
+#endif
+    wp->w_valid |= (VALID_WCOL|VALID_WROW);
+}
+
+    static void
 update_cursor(term_T *term, int redraw)
 {
     if (term->tl_normal_mode)
@@ -1219,7 +1333,16 @@ update_cursor(term_T *term, int redraw)
 						      term->tl_cursor_pos.col);
     else
 #endif
+    if (!term_job_running(term))
+	// avoid the cursor positioned below the last used line
 	setcursor();
+    else
+    {
+	// do not use the window cursor position
+	position_cursor(curwin, &curbuf->b_term->tl_cursor_pos);
+	windgoto(W_WINROW(curwin) + curwin->w_wrow,
+		 curwin->w_wincol + curwin->w_wcol);
+    }
     if (redraw)
     {
 	aco_save_T	aco;
@@ -2358,24 +2481,6 @@ send_keys_to_term(term_T *term, int c, int modmask, int typed)
     return OK;
 }
 
-    static void
-position_cursor(win_T *wp, VTermPos *pos)
-{
-    wp->w_wrow = MIN(pos->row, MAX(0, wp->w_height - 1));
-    wp->w_wcol = MIN(pos->col, MAX(0, wp->w_width - 1));
-#ifdef FEAT_PROP_POPUP
-    if (popup_is_popup(wp))
-    {
-	wp->w_wrow += popup_top_extra(wp);
-	wp->w_wcol += popup_left_extra(wp);
-	wp->w_flags |= WFLAG_WCOL_OFF_ADDED | WFLAG_WROW_OFF_ADDED;
-    }
-    else
-	wp->w_flags &= ~(WFLAG_WCOL_OFF_ADDED | WFLAG_WROW_OFF_ADDED);
-#endif
-    wp->w_valid |= (VALID_WCOL|VALID_WROW);
-}
-
 /*
  * Handle CTRL-W "": send register contents to the job.
  */
@@ -3310,7 +3415,7 @@ handle_resize(int rows, int cols, void *user)
 }
 
 /*
- * If the number of lines that are stored goes over 'termscrollback' then
+ * If the number of lines that are stored goes over 'termwinscroll' then
  * delete the first 10%.
  * "gap" points to tl_scrollback or tl_scrollback_postponed.
  * "update_buffer" is TRUE when the buffer should be updated.
@@ -5358,11 +5463,11 @@ read_dump_file(FILE *fd, VTermPos *cursor_pos)
 		    // use same attr as previous cell
 		    c = fgetc(fd);
 		}
-		else if (isdigit(c))
+		else if (SAFE_isdigit(c))
 		{
 		    // get the decimal attribute
 		    attr = 0;
-		    while (isdigit(c))
+		    while (SAFE_isdigit(c))
 		    {
 			attr = attr * 10 + (c - '0');
 			c = fgetc(fd);
@@ -5394,9 +5499,9 @@ read_dump_file(FILE *fd, VTermPos *cursor_pos)
 			    c = fgetc(fd);
 			    blue = (blue << 4) + hex2nr(c);
 			    c = fgetc(fd);
-			    if (!isdigit(c))
+			    if (!SAFE_isdigit(c))
 				dump_is_corrupt(&ga_text);
-			    while (isdigit(c))
+			    while (SAFE_isdigit(c))
 			    {
 				index = index * 10 + (c - '0');
 				c = fgetc(fd);
@@ -5460,7 +5565,7 @@ read_dump_file(FILE *fd, VTermPos *cursor_pos)
 		for (;;)
 		{
 		    c = fgetc(fd);
-		    if (!isdigit(c))
+		    if (!SAFE_isdigit(c))
 			break;
 		    count = count * 10 + (c - '0');
 		}
@@ -6553,7 +6658,7 @@ f_term_setansicolors(typval_T *argvars, typval_T *rettv UNUSED)
     if (argvars[1].vval.v_list->lv_first == &range_list_item
 	    || argvars[1].vval.v_list->lv_len != 16)
     {
-	emsg(_(e_invalid_argument));
+	semsg(_(e_invalid_value_for_argument_str), "\"colors\"");
 	return;
     }
 

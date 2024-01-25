@@ -142,7 +142,7 @@ gui_start(char_u *arg UNUSED)
 	settmode(TMODE_RAW);		// restart RAW mode
 	set_title_defaults();		// set 'title' and 'icon' again
 #if defined(GUI_MAY_SPAWN) && defined(EXPERIMENTAL_GUI_CMD)
-	if (msg)
+	if (msg != NULL)
 	    emsg(msg);
 #endif
     }
@@ -230,7 +230,7 @@ gui_do_fork(void)
     int		exit_status;
     pid_t	pid = -1;
 
-# if defined(FEAT_RELTIME) && defined(HAVE_TIMER_CREATE)
+# if defined(FEAT_RELTIME) && defined(PROF_NSEC)
     // a timer is not carried forward
     delete_timer();
 # endif
@@ -2786,14 +2786,8 @@ gui_redraw_block(
 		if (col1 > 0)
 		    --col1;
 		else
-		{
 		    // FIXME: how can the first character ever be zero?
-		    // Make this IEMSGN when it no longer breaks Travis CI.
-		    vim_snprintf((char *)IObuff, IOSIZE,
-			    "INTERNAL ERROR: NUL in ScreenLines in row %ld",
-			    (long)gui.row);
-		    msg((char *)IObuff);
-		}
+		    siemsg("NUL in ScreenLines in row %ld", (long)gui.row);
 	    }
 #ifdef FEAT_GUI_GTK
 	    if (col2 + 1 < Columns && ScreenLines[off + col2 + 1] == 0)
@@ -3986,7 +3980,7 @@ gui_drag_scrollbar(scrollbar_T *sb, long value, int still_dragging)
     if (hold_gui_events)
 	return;
 
-    if (cmdwin_type != 0 && sb->wp != curwin)
+    if (cmdwin_type != 0 && sb->wp != cmdwin_win)
 	return;
 
     if (still_dragging)
@@ -4400,9 +4394,10 @@ gui_do_scrollbar(
 }
 
 /*
- * Scroll a window according to the values set in the globals current_scrollbar
- * and scrollbar_value.  Return TRUE if the cursor in the current window moved
- * or FALSE otherwise.
+ * Scroll a window according to the values set in the globals
+ * "current_scrollbar" and "scrollbar_value".
+ * Return TRUE if the cursor in the current window moved or FALSE otherwise.
+ * may eventually cause a redraw using updateWindow
  */
     int
 gui_do_scroll(void)
@@ -4421,6 +4416,9 @@ gui_do_scroll(void)
 	    break;
     if (wp == NULL)
 	// Couldn't find window
+	return FALSE;
+    // don't redraw, LineOffset and similar are not valid!
+    if (exmode_active)
 	return FALSE;
 
     /*
@@ -5032,7 +5030,7 @@ display_errors(void)
 
     // avoid putting up a message box with blanks only
     for (p = (char_u *)error_ga.ga_data; *p != NUL; ++p)
-	if (!isspace(*p))
+	if (!SAFE_isspace(*p))
 	{
 	    // Truncate a very long message, it will go off-screen.
 	    if (STRLEN(p) > 2000)

@@ -301,7 +301,7 @@ get_register(
     if (copy)
     {
 	// If we run out of memory some or all of the lines are empty.
-	if (reg->y_size == 0)
+	if (reg->y_size == 0 || y_current->y_array == NULL)
 	    reg->y_array = NULL;
 	else
 	    reg->y_array = ALLOC_MULT(char_u *, reg->y_size);
@@ -703,6 +703,7 @@ do_execreg(
 		return FAIL;
 	}
 	reg_executing = regname == 0 ? '"' : regname; // disable "q" command
+	pending_end_reg_executing = FALSE;
     }
     return retval;
 }
@@ -827,9 +828,23 @@ insert_reg(
 	    {
 		if (regname == '-')
 		{
+		    int dir = BACKWARD;
+		    if ((State & REPLACE_FLAG) != 0)
+		    {
+			pos_T curpos;
+			if (u_save_cursor() == FAIL)
+			    return FAIL;
+			del_chars((long)mb_charlen(y_current->y_array[0]), TRUE);
+			curpos = curwin->w_cursor;
+			if (oneright() == FAIL)
+			    // hit end of line, need to put forward (after the current position)
+			    dir = FORWARD;
+			curwin->w_cursor = curpos;
+		    }
+
 		    AppendCharToRedobuff(Ctrl_R);
 		    AppendCharToRedobuff(regname);
-		    do_put(regname, NULL, BACKWARD, 1L, PUT_CURSEND);
+		    do_put(regname, NULL, dir, 1L, PUT_CURSEND);
 		}
 		else
 		    stuffescaped(y_current->y_array[i], literally);
@@ -1245,6 +1260,8 @@ op_yank(oparg_T *oap, int deleting, int mess)
 				// double-count it.
 				bd.startspaces = (ce - cs + 1)
 							  - oap->start.coladd;
+				if (bd.startspaces < 0)
+				    bd.startspaces = 0;
 				startcol++;
 			    }
 			}
@@ -1928,7 +1945,7 @@ do_put(
 		ptr += yanklen;
 
 		// insert block's trailing spaces only if there's text behind
-		if ((j < count - 1 || !shortline) && spaces)
+		if ((j < count - 1 || !shortline) && spaces > 0)
 		{
 		    vim_memset(ptr, ' ', (size_t)spaces);
 		    ptr += spaces;
@@ -2096,6 +2113,7 @@ do_put(
 		    {
 			// make sure curwin->w_virtcol is updated
 			changed_cline_bef_curs();
+			invalidate_botline();
 			curwin->w_cursor.col += (colnr_T)(totlen - 1);
 		    }
 		    if (VIsual_active)
@@ -2283,6 +2301,15 @@ error:
 
     msgmore(nr_lines);
     curwin->w_set_curswant = TRUE;
+
+    // Make sure the cursor is not after the NUL.
+    int len = (int)STRLEN(ml_get_curline());
+    if (curwin->w_cursor.col > len)
+    {
+	if (cur_ve_flags == VE_ALL)
+	    curwin->w_cursor.coladd = curwin->w_cursor.col - len;
+	curwin->w_cursor.col = len;
+    }
 
 end:
     if (cmdmod.cmod_flags & CMOD_LOCKMARKS)

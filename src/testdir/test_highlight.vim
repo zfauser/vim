@@ -744,12 +744,32 @@ func Test_colorcolumn_sbr()
   let lines =<< trim END
 	call setline(1, 'The quick brown fox jumped over the lazy dogs')
   END
-  call writefile(lines, 'Xtest_colorcolumn_srb', 'D')
-  let buf = RunVimInTerminal('-S Xtest_colorcolumn_srb', {'rows': 10,'columns': 40})
+  call writefile(lines, 'Xtest_colorcolumn_sbr', 'D')
+  let buf = RunVimInTerminal('-S Xtest_colorcolumn_sbr', {'rows': 10,'columns': 40})
   call term_sendkeys(buf, ":set co=40 showbreak=+++>\\  cc=40,41,43\<CR>")
   call VerifyScreenDump(buf, 'Test_colorcolumn_3', {})
 
   " clean up
+  call StopVimInTerminal(buf)
+endfunc
+
+func Test_visual_sbr()
+  CheckScreendump
+
+  " check Visual highlight when 'showbreak' is set
+  let lines =<< trim END
+      set showbreak=>
+      call setline(1, 'Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua. At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet.')
+      exe "normal! z1\<CR>"
+  END
+  call writefile(lines, 'Xtest_visual_sbr', 'D')
+  let buf = RunVimInTerminal('-S Xtest_visual_sbr', {'rows': 6,'columns': 60})
+
+  call term_sendkeys(buf, "v$")
+  call VerifyScreenDump(buf, 'Test_visual_sbr_1', {})
+
+  " clean up
+  call term_sendkeys(buf, "\<Esc>")
   call StopVimInTerminal(buf)
 endfunc
 
@@ -858,7 +878,7 @@ func Test_highlight_default()
   hi clear
 endfunc
 
-" Test for 'ctermul in a highlight group
+" Test for 'ctermul' in a highlight group
 func Test_highlight_ctermul()
   CheckNotGui
   call assert_notmatch('ctermul=', HighlightArgs('Normal'))
@@ -866,6 +886,16 @@ func Test_highlight_ctermul()
   call assert_match('ctermul=3', HighlightArgs('Normal'))
   call assert_equal('3', synIDattr(synIDtrans(hlID('Normal')), 'ul'))
   highlight Normal ctermul=NONE
+endfunc
+
+" Test for 'ctermfont' in a highlight group
+func Test_highlight_ctermfont()
+  CheckNotGui
+  call assert_notmatch('ctermfont=', HighlightArgs('Normal'))
+  highlight Normal ctermfont=3
+  call assert_match('ctermfont=3', HighlightArgs('Normal'))
+  call assert_equal('3', synIDattr(synIDtrans(hlID('Normal')), 'font'))
+  highlight Normal ctermfont=NONE
 endfunc
 
 " Test for specifying 'start' and 'stop' in a highlight group
@@ -878,6 +908,13 @@ func Test_highlight_start_stop()
   call assert_match("stop=^[[27h;^[[ r;", HighlightArgs('HlGrp2'))
   hi HlGrp2 stop=NONE
   call assert_notmatch("stop=", HighlightArgs('HlGrp2'))
+  set t_xy=^[foo;
+  set t_xz=^[bar;
+  hi HlGrp3 start=t_xy stop=t_xz
+  let d = hlget('HlGrp3')
+  call assert_equal('^[foo;', d[0].start)
+  call assert_equal('^[bar;', d[0].stop)
+  set t_xy= t_xz=
   hi clear
 endfunc
 
@@ -1287,6 +1324,7 @@ func Test_hlset()
   call hlset([{'name': 'hlg11', 'ctermfg': ''}])
   call hlset([{'name': 'hlg11', 'ctermbg': ''}])
   call hlset([{'name': 'hlg11', 'ctermul': ''}])
+  call hlset([{'name': 'hlg11', 'ctermfont': ''}])
   call hlset([{'name': 'hlg11', 'font': ''}])
   call hlset([{'name': 'hlg11', 'gui': {}}])
   call hlset([{'name': 'hlg11', 'guifg': ''}])

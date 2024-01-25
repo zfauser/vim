@@ -508,7 +508,7 @@ ex_listdo(exarg_T *eap)
 		    i++;
 		break;
 	    case CMD_tabdo:
-		for( ; tp != NULL && i + 1 < eap->line1; tp = tp->tp_next)
+		for ( ; tp != NULL && i + 1 < eap->line1; tp = tp->tp_next)
 		    i++;
 		break;
 	    case CMD_argdo:
@@ -610,7 +610,7 @@ ex_listdo(exarg_T *eap)
 	    ++i;
 
 	    // execute the command
-	    do_cmdline(eap->arg, eap->getline, eap->cookie,
+	    do_cmdline(eap->arg, eap->ea_getline, eap->cookie,
 						DOCMD_VERBOSE + DOCMD_NOWAIT);
 
 	    if (eap->cmdidx == CMD_bufdo)

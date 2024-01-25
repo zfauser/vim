@@ -6,7 +6,7 @@ CheckMSWindows
 source mouse.vim
 
 " Helper function for sending a grouped sequence of low level key presses
-" The modifer key(s) can be included as VK Key Codes in the sequence
+" The modifier key(s) can be included as VK Key Codes in the sequence
 " Keydown events will be sent, to to the end of the group, then keyup events
 " will be sent in reverse order to release the keys.
 func SendKeyGroup(keygroup)
@@ -19,7 +19,7 @@ func SendKeyGroup(keygroup)
 endfunc
 
 " Send individual key press and release events.
-" the modifers for the key press can be specified in the modifiers arg.
+" the modifiers for the key press can be specified in the modifiers arg.
 func SendKeyWithModifiers(key, modifiers)
   let args = { }
   let args.keycode = a:key
@@ -359,7 +359,7 @@ func s:LoopTestKeyArray(arr)
     " and when the virtual termcap maps the character
     call assert_equal(0, mod_mask, $"key = {kstr}")
 
-    " Send as a single key press with a modifers mask.
+    " Send as a single key press with a modifiers mask.
     let modifiers = 0
     let key = kcodes[0]
     for key in kcodes
@@ -727,14 +727,14 @@ func Test_mswin_event_mouse()
   if has('gui_running')
     let args = { }
     let args.row = 9
-    let args.col = 7
+    let args.col = 5
     let args.move = 1
     let args.cell = 1
     call test_mswin_event("mouse", args)
     call feedkeys("\<Esc>", 'Lx!')
     let pos = getmousepos()
     call assert_equal(9, pos.screenrow)
-    call assert_equal(7, pos.screencol)
+    call assert_equal(5, pos.screencol)
 
     let args.cell = 0
     call test_mswin_event("mouse", args)
