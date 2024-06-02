@@ -415,7 +415,17 @@ func s:StartDebug_prompt(dict)
   let s:promptbuf = bufnr('')
   call prompt_setprompt(s:promptbuf, 'gdb> ')
   set buftype=prompt
-  file gdb
+
+  if empty(glob('gdb'))
+    file gdb
+  elseif empty(glob('Termdebug-gdb-console'))
+    file Termdebug-gdb-console
+  else
+    call s:Echoerr("You have a file/folder named 'gdb'
+          \ or 'Termdebug-gdb-console'.
+          \ Please exit and rename them because Termdebug may not work as expected.")
+  endif
+
   call prompt_setcallback(s:promptbuf, function('s:PromptCallback'))
   call prompt_setinterrupt(s:promptbuf, function('s:PromptInterrupt'))
 
@@ -1463,9 +1473,12 @@ func s:GotoAsmwinOrCreateIt()
 
     if s:asmbuf > 0 && bufexists(s:asmbuf)
       exe 'buffer' . s:asmbuf
-    else
+    elseif empty(glob('Termdebug-asm-listing'))
       silent file Termdebug-asm-listing
       let s:asmbuf = bufnr('Termdebug-asm-listing')
+    else
+      call s:Echoerr("You have a file/folder named 'Termdebug-asm-listing'.
+          \ Please exit and rename it because Termdebug may not work as expected.")
     endif
 
     if mdf != 'vert' && s:GetDisasmWindowHeight() > 0
@@ -1532,9 +1545,12 @@ func s:GotoVariableswinOrCreateIt()
 
     if s:varbuf > 0 && bufexists(s:varbuf)
       exe 'buffer' . s:varbuf
-    else
+    elseif empty(glob('Termdebug-variables-listing'))
       silent file Termdebug-variables-listing
       let s:varbuf = bufnr('Termdebug-variables-listing')
+    else
+      call s:Echoerr("You have a file/folder named 'Termdebug-variables-listing'.
+          \ Please exit and rename it because Termdebug may not work as expected.")
     endif
 
     if mdf != 'vert' && s:GetVariablesWindowHeight() > 0
@@ -1661,7 +1677,7 @@ func s:CreateBreakpoint(id, subid, enabled)
       endif
     endif
     call sign_define('debugBreakpoint' .. nr,
-				\ #{text: strpart(label, 0, 2), 
+				\ #{text: slice(label, 0, 2),
 				\ texthl: hiName})
   endif
 endfunc

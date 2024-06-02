@@ -103,7 +103,7 @@ func Test_xxd()
     unsigned char XXDfile[] = {
       0x54, 0x45, 0x53, 0x54, 0x61, 0x62, 0x63, 0x64, 0x30, 0x39, 0x0a
     };
-    size_t XXDfile_len = 11;
+    unsigned int XXDfile_len = 11;
   [CODE]
 
   call assert_equal(expected, getline(1,'$'), s:Mess(s:test))
@@ -119,7 +119,7 @@ func Test_xxd()
       unsigned char XXDFILE[] = {
         0x54, 0x45, 0x53, 0x54, 0x61, 0x62, 0x63, 0x64, 0x30, 0x39, 0x0a
       };
-      size_t XXDFILE_LEN = 11;
+      unsigned int XXDFILE_LEN = 11;
     [CODE]
     call assert_equal(expected, getline(1,'$'), s:Mess(s:test))
   endfor
@@ -233,7 +233,7 @@ func Test_xxd()
       unsigned char varName[] = {
         0x54, 0x45, 0x53, 0x54, 0x61, 0x62, 0x63, 0x64, 0x30, 0x39, 0x0a
       };
-      size_t varName_len = 11;
+      unsigned int varName_len = 11;
     [CODE]
 
     call assert_equal(expected, getline(1,'$'), s:Mess(s:test))
@@ -247,7 +247,7 @@ func Test_xxd()
     unsigned char StdIn[] = {
       0x54, 0x45, 0x53, 0x54, 0x61, 0x62, 0x63, 0x64, 0x30, 0x39, 0x0a
     };
-    size_t StdIn_len = 11;
+    unsigned int StdIn_len = 11;
   [CODE]
   call assert_equal(expected, getline(1,'$'), s:Mess(s:test))
 
@@ -263,7 +263,7 @@ func Test_xxd()
       unsigned char VARNAME[] = {
         0x54, 0x45, 0x53, 0x54, 0x61, 0x62, 0x63, 0x64, 0x30, 0x39, 0x0a
       };
-      size_t VARNAME_LEN = 11;
+      unsigned int VARNAME_LEN = 11;
     [CODE]
     call assert_equal(expected, getline(1,'$'), s:Mess(s:test))
   endfor
@@ -409,6 +409,22 @@ func Test_xxd_max_cols()
       bwipe!
     endfor
   endfor
+endfunc
+
+
+" This used to trigger a buffer overflow (#14738)
+func Test_xxd_buffer_overflow()
+  CheckUnix
+  if system('file ' .. s:xxd_cmd) =~ '32-bit'
+    throw 'Skipped: test only works on 64-bit architecture'
+  endif
+  new
+  let input = repeat('A', 256)
+  call writefile(['-9223372036854775808: ' . repeat("\e[1;32m41\e[0m ", 256) . ' ' . repeat("\e[1;32mA\e[0m", 256)], 'Xxdexpected', 'D')
+  exe 'r! printf ' . input . '| ' . s:xxd_cmd . ' -Ralways -g1 -c256 -d -o 9223372036854775808 > Xxdout'
+  call assert_equalfile('Xxdexpected', 'Xxdout')
+  call delete('Xxdout')
+  bwipe!
 endfunc
 
 " -c0 selects the format specific default column value, as if no -c was given

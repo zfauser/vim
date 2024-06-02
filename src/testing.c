@@ -1051,6 +1051,8 @@ f_test_override(typval_T *argvars, typval_T *rettv UNUSED)
 	ml_get_alloc_lines = val;
     else if (STRCMP(name, (char_u *)"autoload") == 0)
 	override_autoload = val;
+    else if (STRCMP(name, (char_u *)"defcompile") == 0)
+	override_defcompile = val;
     else if (STRCMP(name, (char_u *)"ALL") == 0)
     {
 	disable_char_avail_for_testing = FALSE;
@@ -1091,9 +1093,8 @@ f_test_refcount(typval_T *argvars, typval_T *rettv)
 	case VAR_SPECIAL:
 	case VAR_STRING:
 	case VAR_INSTR:
-	case VAR_CLASS:
-	case VAR_OBJECT:
 	    break;
+
 	case VAR_JOB:
 #ifdef FEAT_JOB_CHANNEL
 	    if (argvars[0].vval.v_job != NULL)
@@ -1131,6 +1132,14 @@ f_test_refcount(typval_T *argvars, typval_T *rettv)
 	case VAR_DICT:
 	    if (argvars[0].vval.v_dict != NULL)
 		retval = argvars[0].vval.v_dict->dv_refcount - 1;
+	    break;
+	case VAR_CLASS:
+	    if (argvars[0].vval.v_class != NULL)
+		retval = argvars[0].vval.v_class->class_refcount - 1;
+	    break;
+	case VAR_OBJECT:
+	    if (argvars[0].vval.v_object != NULL)
+		retval = argvars[0].vval.v_object->obj_refcount - 1;
 	    break;
 	case VAR_TYPEALIAS:
 	    if (argvars[0].vval.v_typealias != NULL)

@@ -6136,7 +6136,8 @@ run_do(const char *cmd, void *arg UNUSED
 	    goto err;
 
 	// Check that the command didn't switch to another buffer.
-	if (curbuf != was_curbuf)
+	// Check the line number, the command my have deleted lines.
+	if (curbuf != was_curbuf || lnum > curbuf->b_ml.ml_line_count)
 	{
 	    Py_XDECREF(ret);
 	    goto err;
@@ -7324,12 +7325,11 @@ populate_module(PyObject *m)
 	return -1;
     }
 
+# if PY_VERSION_HEX < 0x30c00a7
+    // find_module has been removed as of Python 3.12.0a7
     if ((py_find_module = PyObject_GetAttrString(cls, "find_module")))
-    {
-	// find_module() is deprecated, this may stop working in some later
-	// version.
 	ADD_OBJECT(m, "_find_module", py_find_module);
-    }
+# endif
 
     Py_DECREF(imp);
 

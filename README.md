@@ -18,7 +18,7 @@ or one of the [Maillists](https://www.vim.org/community.php).
 ## What is Vim?
 
 Vim is a greatly improved version of the good old UNIX editor
-[Vi](https://en.wikipedia.org/wiki/Vi).  Many new
+[Vi](https://en.wikipedia.org/wiki/Vi_(text_editor)).  Many new
 features have been added: multi-level undo, syntax highlighting, command line
 history, on-line help, spell checking, filename completion, block operations,
 script language, etc.  There is also a Graphical User Interface (GUI)
@@ -109,12 +109,12 @@ distribute it.
 ## Sponsoring
 
 Fixing bugs and adding new features takes a lot of time and effort.  To show
-your appreciation for the work and motivate Bram and others to continue
-working on Vim please send a donation.
+your appreciation for the work and motivate developers to continue working on
+Vim please send a donation.
 
-Since Bram is back to a paid job the money will now be used to help children
-in Uganda.  See [`runtime/doc/uganda.txt`](./runtime/doc/uganda.txt).  But
-at the same time donations increase Bram's motivation to keep working on Vim!
+The money you donated will be mainly used to help children in Uganda.  See
+[`runtime/doc/uganda.txt`](./runtime/doc/uganda.txt).  But at the same time
+donations increase the development team motivation to keep working on Vim!
 
 For the most recent information about sponsoring look on the Vim web site:
 	https://www.vim.org/sponsor/
@@ -126,7 +126,7 @@ If you would like to help make Vim better, see the
 
 ## Information
 
-If you are on macOS, you can use [Macvim](https://macvim-dev.github.io/macvim/).
+If you are on macOS, you can use [MacVim](https://macvim.org).
 
 The latest news about Vim can be found on the Vim home page:
 	https://www.vim.org/

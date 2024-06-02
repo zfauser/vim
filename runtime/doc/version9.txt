@@ -1,4 +1,4 @@
-*version9.txt*  For Vim version 9.1.  Last change: 2024 Jan 05
+*version9.txt*  For Vim version 9.1.  Last change: 2024 May 17
 
 
 		  VIM REFERENCE MANUAL    by Bram Moolenaar
@@ -32090,7 +32090,7 @@ Solution:   Store the text column when drawing text.
 
 Patch 9.0.0049
 Problem:    Csv and tsv files are not recognized.
-Solution:   Add patterns fo csv and tsv files. (Leandro Lourenci,
+Solution:   Add patterns for csv and tsv files. (Leandro Lourenci,
             closes #10680)
 
 Patch 9.0.0050
@@ -40641,7 +40641,7 @@ Solution:   Use the class-related grow array for storing the
 
 Patch 9.0.1989
 Problem:    Vim9: double error message given
-Solution:   Only give second error message, if ther
+Solution:   Only give second error message, if there
              wasn't one given before
 
 Patch 9.0.1990
@@ -40687,7 +40687,7 @@ Solution:   Mention the defining class for variable access error message
 
 Patch 9.0.2000
 Problem:    Vim9: use-after-free in deep call stack
-Solution:   Get the objct pointer from execution stack
+Solution:   Get the object pointer from execution stack
 
 Patch 9.0.2001
 Problem:    Vim9: segfault with islocked()
@@ -41534,5 +41534,106 @@ Solution:   Always reset wlv->need_showbreak regardless of the values of
 Patch 9.0.2190
 Problem:    proto files need update
 Solution:   re-generate them
+
+==============================================================================
+VERSION 9.2				*version-9.2* *version9.2* *vim-9.2*
+
+This section is about improvements made between version 9.1 and 9.2
+and is a work in progress.
+
+Support for Wayland UI.
+
+Support for the XDG Desktop Specification |xdg-base-dir|
+
+Vim9 script
+-----------
+Add support for internal builtin functions with vim9 objects, see
+|builtin-object-methods|
+
+Enum support for Vim9 script |:enum|
+
+Other improvements				*new-other-9.2*
+------------------
+The comment plugin |comment-install| is included.
+
+Changed						*changed-9.2*
+-------
+
+- use 'smoothscroll' logic for CTRL-F and CTRL-B for pagewise scrolling
+- use 'smoothscroll' logic for CTRL-D and CTRL-U for half-pagewise scrolling
+
+Added						*added-9.2*
+-----
+
+Various syntax, indent and other plugins were added.
+
+Functions: ~
+
+|diff()|		diff two Lists of strings
+|foreach()|		apply function to List items
+|matchbufline()|	all the matches of a pattern in a buffer
+|matchstrlist()|	all the matches of a pattern in a List of strings
+|getregion()|		get a region of text from a buffer
+|getregionpos()|	get a list of positions for a region
+
+
+Autocommands: ~
+
+|SessionWritePost|	after writing the session file |:mksession|
+|TermResponseAll|	after the terminal response to |t_RV| and others is
+			received
+|WinNewPre|		before creating a new window
+
+
+Highlighting: ~
+
+|hl-MsgArea|		highlighting of the Command-line and messages area
+
+Commands: ~
+
+|[r| and |]r|		to move the cursor to previous/next rare word
+
+
+Options: ~
+
+'winfixbuf'		Keep buffer focused in a window
+'t_xo'			Terminal uses XON/XOFF handshaking (e.g. vt420)
+
+==============================================================================
+INCOMPATIBLE CHANGES				*incompatible-9.2*
+
+Improved/Different MS-Windows mapping support
+|w32-experimental-keycode-trans-strategy|
+
+==============================================================================
+IMPROVEMENTS					*improvements-9.2*
+
+Support for command-line completion of 'keymap' option values.
+
+Support for compiling all the methods in a Vim9 class using |:defcompile|.
+
+Support for alternate font highlighting using |t_CF| terminal code.
+
+Support for Super key mappings in GTK using <D-Key>.
+
+Improved visual highlighting.
+
+Python3 support in OpenVMS.
+
+==============================================================================
+COMPILE TIME CHANGES				*compile-changes-9.2*
+
+Support for building with Ruby 3.3.
+
+Support for building Vim 9 in z/OS (MVS).
+
+==============================================================================
+PATCHES						*patches-9.2* *bug-fixes-9.2*
+						*patches-after-9.1*
+
+The list of patches that got included since 9.1.0.  This includes all the new
+features, but does not include runtime file changes (syntax, indent, ftplugin,
+documentation, etc.)
+
 
  vim:tw=78:ts=8:noet:ft=help:norl:fdm=manual:

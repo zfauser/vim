@@ -364,6 +364,76 @@ set_init_clean_rtp(void)
 }
 #endif
 
+#ifdef UNIX
+/*
+ * Change 'runtimepath' and 'packdir' to '$XDG_CONFIG_HOME/vim' if the only
+ * vimrc found is located in '$XDG_CONFIG_HOME/vim/vimrc'.
+ * In case the '$XDG_CONFIG_HOME' variable is not set, '$HOME/.config' is used
+ * as a fallback as is defined in the XDG base dir specification:
+ * <https://specifications.freedesktop.org/basedir-spec/basedir-spec-latest.html>
+ */
+    static void
+set_init_xdg_rtp(void)
+{
+    int		opt_idx;
+    int		has_xdg_env = TRUE;
+    int		should_free_xdg_dir = FALSE;
+    char_u	*vimrc1 = NULL;
+    char_u	*vimrc2 = NULL;
+    char_u	*xdg_dir = NULL;
+    char_u	*xdg_rtp = NULL;
+    char_u	*vimrc_xdg = NULL;
+
+    // initialize chartab, so we can expand $HOME
+    (void)init_chartab();
+    vimrc1 = expand_env_save((char_u *)USR_VIMRC_FILE);
+    vimrc2 = expand_env_save((char_u *)USR_VIMRC_FILE2);
+
+    xdg_dir = mch_getenv("XDG_CONFIG_HOME");
+    if (!xdg_dir)
+    {
+	xdg_dir = expand_env_save((char_u *)"~/.config");
+	should_free_xdg_dir = TRUE;
+	has_xdg_env = FALSE;
+    }
+    vimrc_xdg = concat_fnames(xdg_dir, (char_u *)"vim/vimrc", TRUE);
+
+    if (file_is_readable(vimrc1) || file_is_readable(vimrc2) ||
+	    !file_is_readable(vimrc_xdg))
+	goto theend;
+
+    xdg_rtp = has_xdg_env ? (char_u *)XDG_RUNTIMEPATH
+	: (char_u *)XDG_RUNTIMEPATH_FB;
+
+    if ((opt_idx = findoption((char_u *)"runtimepath")) < 0)
+	goto theend;
+
+    options[opt_idx].def_val[VI_DEFAULT] = xdg_rtp;
+    p_rtp = xdg_rtp;
+
+    if ((opt_idx = findoption((char_u *)"packpath")) < 0)
+	goto theend;
+
+    options[opt_idx].def_val[VI_DEFAULT] = xdg_rtp;
+    p_pp = xdg_rtp;
+
+#if defined(XDG_VDIR) && defined(FEAT_SESSION)
+    if ((opt_idx = findoption((char_u *)"viewdir")) < 0)
+	goto theend;
+
+    options[opt_idx].def_val[VI_DEFAULT] = (char_u *)XDG_VDIR;
+    p_vdir = (char_u *)XDG_VDIR;
+#endif
+
+theend:
+    vim_free(vimrc1);
+    vim_free(vimrc2);
+    vim_free(vimrc_xdg);
+    if (should_free_xdg_dir)
+	vim_free(xdg_dir);
+}
+#endif
+
 /*
  * Expand environment variables and things like "~" for the defaults.
  * If option_expand() returns non-NULL the variable is expanded.  This can
@@ -588,6 +658,7 @@ set_init_1(int clean_arg)
     set_options_default(0);
 
 #ifdef UNIX
+    set_init_xdg_rtp();
     set_init_restricted_mode();
 #endif
 
@@ -792,7 +863,10 @@ set_string_default_esc(char *name, char_u *val, int escape)
 
     opt_idx = findoption((char_u *)name);
     if (opt_idx < 0)
+    {
+	vim_free(p);
 	return;
+    }
 
     if (options[opt_idx].flags & P_DEF_ALLOCED)
 	vim_free(options[opt_idx].def_val[VI_DEFAULT]);
@@ -3269,27 +3343,6 @@ did_set_binary(optset_T *args)
     return NULL;
 }
 
-#if defined(FEAT_LINEBREAK) || defined(PROTO)
-/*
- * Called when the 'breakat' option changes value.
- */
-    char *
-did_set_breakat(optset_T *args UNUSED)
-{
-    char_u	*p;
-    int		i;
-
-    for (i = 0; i < 256; i++)
-	breakat_flags[i] = FALSE;
-
-    if (p_breakat != NULL)
-	for (p = p_breakat; *p; p++)
-	    breakat_flags[*p] = TRUE;
-
-    return NULL;
-}
-#endif
-
 /*
  * Process the updated 'buflisted' option value.
  */
@@ -3699,7 +3752,7 @@ did_set_modified(optset_T *args)
     if (!args->os_newval.boolean)
 	save_file_ff(curbuf);	// Buffer is unchanged
     redraw_titles();
-    modified_was_set = args->os_newval.boolean;
+    curbuf->b_modified_was_set = args->os_newval.boolean;
     return NULL;
 }
 
@@ -4617,8 +4670,10 @@ set_bool_option(
 #endif
 
     comp_col();			    // in case 'ruler' or 'showcmd' changed
+
     if (curwin->w_curswant != MAXCOL
-		     && (options[opt_idx].flags & (P_CURSWANT | P_RALL)) != 0)
+		     && (options[opt_idx].flags & (P_CURSWANT | P_RALL)) != 0
+				   && (options[opt_idx].flags & P_HLONLY) == 0)
 	curwin->w_set_curswant = TRUE;
 
     if ((opt_flags & OPT_NO_REDRAW) == 0)
@@ -4860,9 +4915,12 @@ set_num_option(
 #endif
 
     comp_col();			    // in case 'columns' or 'ls' changed
+
     if (curwin->w_curswant != MAXCOL
-		     && (options[opt_idx].flags & (P_CURSWANT | P_RALL)) != 0)
+		     && (options[opt_idx].flags & (P_CURSWANT | P_RALL)) != 0
+				   && (options[opt_idx].flags & P_HLONLY) == 0)
 	curwin->w_set_curswant = TRUE;
+
     if ((opt_flags & OPT_NO_REDRAW) == 0)
 	check_redraw(options[opt_idx].flags);
 
@@ -4883,11 +4941,14 @@ check_redraw(long_u flags)
 	status_redraw_all();
 
     if ((flags & P_RBUF) || (flags & P_RWIN) || all)
-	changed_window_setting();
+    {
+	if (flags & P_HLONLY)
+	    redraw_later(UPD_NOT_VALID);
+	else
+	    changed_window_setting();
+    }
     if (flags & P_RBUF)
 	redraw_curbuf_later(UPD_NOT_VALID);
-    if (flags & P_RWINONLY)
-	redraw_later(UPD_NOT_VALID);
     if (doclear)
 	redraw_all_later(UPD_CLEAR);
     else if (all)
@@ -6433,6 +6494,7 @@ get_varp(struct vimoption *p)
 #ifdef FEAT_LINEBREAK
 	case PV_NUW:	return (char_u *)&(curwin->w_p_nuw);
 #endif
+	case PV_WFB:	return (char_u *)&(curwin->w_p_wfb);
 	case PV_WFH:	return (char_u *)&(curwin->w_p_wfh);
 	case PV_WFW:	return (char_u *)&(curwin->w_p_wfw);
 #if defined(FEAT_QUICKFIX)
