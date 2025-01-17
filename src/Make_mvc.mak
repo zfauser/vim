@@ -862,7 +862,7 @@ GUI_OBJ = \
 	$(OUTDIR)\gui_beval.obj \
 	$(OUTDIR)\gui_w32.obj
 GUI_LIB = \
-	version.lib $(IME_LIB) winspool.lib comctl32.lib
+	version.lib $(IME_LIB) winspool.lib comctl32.lib dwmapi.lib
 !else
 SUBSYSTEM = console
 CUI_INCL = iscygpty.h
